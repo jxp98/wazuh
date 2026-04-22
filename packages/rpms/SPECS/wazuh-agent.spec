@@ -73,6 +73,14 @@ echo 'USER_CA_STORE="/path/to/my_cert.pem"' >> ./etc/preloaded-vars.conf
 echo 'USER_AUTO_START="n"' >> ./etc/preloaded-vars.conf
 ./install.sh || { echo "install.sh failed! Aborting." >&2; exit 1; }
 
+# Build and install runtime Java helper when the source is available
+if [ -d tools/runtime-java-normalizer ]; then
+  make -C tools/runtime-java-normalizer build OUTPUT=%{_localstatedir}/bin/wazuh-runtime-java-normalizer
+  chmod 0750 %{_localstatedir}/bin/wazuh-runtime-java-normalizer
+else
+  echo "[runtime-java] tools/runtime-java-normalizer 不存在，跳过 helper 打包"
+fi
+
 # Create directories
 mkdir -p ${RPM_BUILD_ROOT}%{_initrddir}
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}

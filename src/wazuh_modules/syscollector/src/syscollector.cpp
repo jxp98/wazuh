@@ -40,7 +40,8 @@ void syscollector_init(const unsigned int inverval,
                        const bool users,
                        const bool services,
                        const bool browserExtensions,
-                       const bool notifyOnFirstScan)
+                       const bool notifyOnFirstScan,
+                       const bool runtimeJavaInventory)
 {
     std::function<void(const std::string&)> callbackDiffWrapper
     {
@@ -99,7 +100,8 @@ void syscollector_init(const unsigned int inverval,
                                       users,
                                       services,
                                       browserExtensions,
-                                      notifyOnFirstScan);
+                                      notifyOnFirstScan,
+                                      runtimeJavaInventory);
     }
     catch (const std::exception& ex)
     {

@@ -1,3 +1,6 @@
 *
 !.gitignore
 !CMakeLists.txt
+!indexer-plugins/
+indexer-plugins/*
+!indexer-plugins/wazuh-states-vulnerabilities-runtime-java.json

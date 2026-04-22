@@ -28,6 +28,7 @@ static const char *XML_GROUPS = "groups";
 static const char *XML_USERS = "users";
 static const char *XML_SERVICES = "services";
 static const char *XML_BROWSER_EXTENSIONS = "browser_extensions";
+static const char *XML_RUNTIME_JAVA_INVENTORY = "runtime_java_inventory";
 
 static void parse_synchronization_section(wm_sys_t * syscollector, XML_NODE node) {
     const char *XML_DB_SYNC_ENABLED = "enabled";
@@ -118,6 +119,7 @@ int wm_syscollector_read(const OS_XML *xml, XML_NODE node, wmodule *module) {
         syscollector->flags.users = 1;
         syscollector->flags.services = 1;
         syscollector->flags.browser_extensions = 1;
+        syscollector->flags.runtime_java_inventory = 0;
 
         // Database synchronization config values
         syscollector->sync.enable_synchronization = 1;
@@ -307,6 +309,14 @@ int wm_syscollector_read(const OS_XML *xml, XML_NODE node, wmodule *module) {
                 return OS_INVALID;
             }
             syscollector->flags.browser_extensions = !strcmp(node[i]->content, "yes");
+
+        } else if (!strcmp(node[i]->element, XML_RUNTIME_JAVA_INVENTORY)) {
+            if (!node[i]->content || !strlen(node[i]->content) ||
+                (strcmp(node[i]->content, "yes") && strcmp(node[i]->content, "no"))) {
+                merror("Invalid content for tag '%s' at module '%s'.", XML_RUNTIME_JAVA_INVENTORY, WM_SYS_CONTEXT.name);
+                return OS_INVALID;
+            }
+            syscollector->flags.runtime_java_inventory = !strcmp(node[i]->content, "yes");
 
         } else if (!strcmp(node[i]->element, XML_SYNC)) {
             // Synchronization section - Let's get the children node and iterate the values

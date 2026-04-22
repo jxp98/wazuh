@@ -71,7 +71,8 @@ class EXPORTED Syscollector final
                   const bool users = true,
                   const bool services = true,
                   const bool browserExtensions = true,
-                  const bool notifyOnFirstScan = false);
+                  const bool notifyOnFirstScan = false,
+                  const bool runtimeJavaInventory = false);
 
         /**
          * @brief Set agentd query function for agentd communication (cross-platform)
@@ -127,6 +128,7 @@ class EXPORTED Syscollector final
         nlohmann::json getUsersData();
         nlohmann::json getServicesData();
         nlohmann::json getBrowserExtensionsData();
+        nlohmann::json getRuntimeJavaComponentsData();
 
         std::pair<nlohmann::json, uint64_t> ecsData(const nlohmann::json& data, const std::string& table, bool createFields = true);
         nlohmann::json ecsSystemData(const nlohmann::json& originalData, bool createFields = true);
@@ -173,6 +175,7 @@ class EXPORTED Syscollector final
         nlohmann::json ecsGroupsData(const nlohmann::json& originalData, bool createFields = true);
         nlohmann::json ecsServicesData(const nlohmann::json& originalData, bool createFields = true);
         nlohmann::json ecsBrowserExtensionsData(const nlohmann::json& originalData, bool createFields = true);
+        nlohmann::json ecsRuntimeJavaComponentsData(const nlohmann::json& originalData, bool createFields = true);
 
         std::string getPrimaryKeys(const nlohmann::json& data, const std::string& table);
         std::string calculateHashId(const nlohmann::json& data, const std::string& table);
@@ -198,6 +201,7 @@ class EXPORTED Syscollector final
         void scanUsers();
         void scanServices();
         void scanBrowserExtensions();
+        void scanRuntimeJavaComponents();
         void scan();
         void syncLoop(std::unique_lock<std::mutex>& scan_lock);
         bool pause();
@@ -431,6 +435,7 @@ class EXPORTED Syscollector final
         bool                                                                     m_users;
         bool                                                                     m_services;
         bool                                                                     m_browserExtensions;
+        bool                                                                     m_runtimeJavaInventory;
         unsigned int                                                             m_dataCleanRetries;
         bool                                                                     m_allCollectorsDisabled;
         bool                                                                     m_vdSyncEnabled;

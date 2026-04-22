@@ -59,6 +59,14 @@ override_dh_install:
 	USER_AUTO_START="n" \
 	./install.sh || { echo "install.sh failed! Aborting." >&2; exit 1; }
 
+	# Build and install runtime Java helper when the source is available
+	if [ -d tools/runtime-java-normalizer ]; then \
+		$(MAKE) -C tools/runtime-java-normalizer build OUTPUT=$(INSTALLATION_DIR)/bin/wazuh-runtime-java-normalizer; \
+		chmod 0750 $(INSTALLATION_DIR)/bin/wazuh-runtime-java-normalizer; \
+	else \
+		echo "[runtime-java] tools/runtime-java-normalizer 不存在，跳过 helper 打包"; \
+	fi
+
 	# Copying init.d script
 	mkdir -p ${TARGET_DIR}/etc/init.d/
 	sed -i "s:WAZUH_HOME_TMP:${INSTALLATION_DIR}:g" src/init/templates/wazuh-debian.init

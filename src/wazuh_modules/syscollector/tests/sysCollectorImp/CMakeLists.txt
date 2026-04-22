@@ -19,7 +19,8 @@ file(GLOB SYSCOLLECTOR_IMP_UNIT_TEST_SRC "*.cpp")
 
 file(GLOB SYSCOLLECTOR_IMP_SRC
      "${SRC_FOLDER}/wazuh_modules/syscollector/src/syscollectorImp.cpp"
-     "${SRC_FOLDER}/wazuh_modules/syscollector/src/syscollectorNormalizer.cpp")
+     "${SRC_FOLDER}/wazuh_modules/syscollector/src/syscollectorNormalizer.cpp"
+     "${SRC_FOLDER}/wazuh_modules/syscollector/src/runtimeJavaInventory.cpp")
 
 file(GLOB DBSYNC_IMP_SRC "${SRC_FOLDER}/shared_modules/dbsync/src/*.cpp"
      "${SRC_FOLDER}/shared_modules/dbsync/src/sqlite/*.cpp")

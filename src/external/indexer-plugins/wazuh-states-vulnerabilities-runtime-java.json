@@ -1,0 +1,109 @@
+{
+  "index_patterns": [
+    "wazuh-states-vulnerabilities-runtime-java*"
+  ],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0
+      }
+    },
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "schema_version": {
+          "type": "keyword"
+        },
+        "wazuh": {
+          "properties": {
+            "agent": {
+              "properties": {
+                "id": { "type": "keyword" },
+                "name": { "type": "keyword" },
+                "version": { "type": "keyword" },
+                "hostname": { "type": "keyword" },
+                "architecture": { "type": "keyword" },
+                "groups": { "type": "keyword" }
+              }
+            },
+            "cluster": {
+              "properties": {
+                "name": { "type": "keyword" },
+                "node": { "type": "keyword" }
+              }
+            },
+            "session": {
+              "properties": {
+                "id": { "type": "keyword" },
+                "module": { "type": "keyword" },
+                "scan_mode": { "type": "keyword" }
+              }
+            }
+          }
+        },
+        "matcher": {
+          "properties": {
+            "source": { "type": "keyword" },
+            "url": { "type": "keyword" },
+            "request_id": { "type": "keyword" },
+            "generated_at": { "type": "date" }
+          }
+        },
+        "runtime_java": {
+          "properties": {
+            "inventory_id": { "type": "keyword" },
+            "operation": { "type": "keyword" },
+            "evidence_source": { "type": "keyword" },
+            "confidence": { "type": "keyword" },
+            "component": {
+              "properties": {
+                "_inventory_id": { "type": "keyword" },
+                "_inventory_index": { "type": "keyword" },
+                "_document_version": { "type": "unsigned_long" },
+                "package_type": { "type": "keyword" },
+                "group_id": { "type": "keyword" },
+                "artifact_id": { "type": "keyword" },
+                "version": { "type": "keyword" },
+                "version_": { "type": "keyword" },
+                "purl": { "type": "keyword" },
+                "runtime_path": { "type": "keyword" },
+                "archive_path": { "type": "keyword" },
+                "path_in_archive": { "type": "keyword" },
+                "sha1": { "type": "keyword" },
+                "sha256": { "type": "keyword" },
+                "pid": { "type": "long" },
+                "process_name": { "type": "keyword" },
+                "process_cmdline": { "type": "wildcard" },
+                "process_start": { "type": "date" },
+                "evidence_source": { "type": "keyword" },
+                "confidence": { "type": "keyword" },
+                "discovery_source": { "type": "keyword" },
+                "discovered_at": { "type": "date" },
+                "is_direct_runtime_target": { "type": "boolean" },
+                "is_nested": { "type": "boolean" }
+              }
+            },
+            "vulnerability": {
+              "properties": {
+                "id": { "type": "keyword" },
+                "severity": { "type": "keyword" },
+                "title": { "type": "text" },
+                "description": { "type": "text" },
+                "affected_range": { "type": "keyword" },
+                "fixed_versions": { "type": "keyword" },
+                "references": { "type": "keyword" },
+                "source": { "type": "keyword" },
+                "operation": { "type": "keyword" },
+                "match_confidence": { "type": "keyword" },
+                "matched_at": { "type": "date" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

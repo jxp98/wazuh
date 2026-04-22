@@ -13,6 +13,7 @@
     <groups>yes</groups>
     <services>yes</services>
     <browser_extensions>yes</browser_extensions>
+    <runtime_java_inventory>no</runtime_java_inventory>
 
     <!-- Database synchronization settings -->
     <synchronization>

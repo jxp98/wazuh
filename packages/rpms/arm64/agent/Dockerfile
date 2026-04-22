@@ -98,6 +98,15 @@ RUN mkdir -p /usr/local/var/lib/rpm && \
     cp /var/lib/rpm/Packages /usr/local/var/lib/rpm/Packages && \
     /usr/local/bin/rpm --rebuilddb && rm -rf /root/rpmbuild
 
+# -------------------------------------------------------------------
+# Go toolchain (runtime-java helper build)
+# -------------------------------------------------------------------
+ENV GO_VERSION=1.22.12
+RUN curl -L https://go.dev/dl/go${GO_VERSION}.linux-arm64.tar.gz -o /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm -f /tmp/go.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
+
 # Add the scripts to build the RPM package
 ADD build.sh /usr/local/bin/build_package
 RUN chmod +x /usr/local/bin/build_package

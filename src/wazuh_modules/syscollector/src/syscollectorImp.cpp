@@ -23,6 +23,7 @@
 #include <thread>
 
 #include "syscollectorTablesDef.hpp"
+#include "runtimeJavaInventory.hpp"
 #include "agent_sync_protocol.hpp"
 #include "logging_helper.h"
 #include "module_query_errors.h"
@@ -125,6 +126,7 @@ static const std::map<std::string, std::string> INDEX_MAP
     {GROUPS_TABLE, SYSCOLLECTOR_SYNC_INDEX_GROUPS},
     {SERVICES_TABLE, SYSCOLLECTOR_SYNC_INDEX_SERVICES},
     {BROWSER_EXTENSIONS_TABLE, SYSCOLLECTOR_SYNC_INDEX_BROWSER_EXTENSIONS},
+    {RUNTIME_JAVA_COMPONENTS_TABLE, SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS},
     // LCOV_EXCL_STOP
 };
 
@@ -146,6 +148,7 @@ static const std::map<std::string, std::string> AGENTD_TO_INDEX_MAP
     {"groups", SYSCOLLECTOR_SYNC_INDEX_GROUPS},
     {"services", SYSCOLLECTOR_SYNC_INDEX_SERVICES},
     {"browser_extensions", SYSCOLLECTOR_SYNC_INDEX_BROWSER_EXTENSIONS},
+    {"runtime_java_components", SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS},
     // LCOV_EXCL_STOP
 };
 
@@ -401,6 +404,7 @@ Syscollector::Syscollector()
     , m_users { false }
     , m_services { false }
     , m_browserExtensions { false }
+    , m_runtimeJavaInventory { false }
     , m_vdSyncEnabled { false }
     , m_failedItems { nullptr }
     , m_itemsToUpdateSync { nullptr }
@@ -444,6 +448,7 @@ std::string Syscollector::getCreateStatement() const
     ret += USERS_SQL_STATEMENT;
     ret += SERVICES_SQL_STATEMENT;
     ret += BROWSER_EXTENSIONS_SQL_STATEMENT;
+    ret += RUNTIME_JAVA_COMPONENTS_SQL_STATEMENT;
     ret += TABLE_METADATA_SQL_STATEMENT;
     return ret;
 }
@@ -470,7 +475,8 @@ void Syscollector::init(const std::shared_ptr<ISysInfo>& spInfo,
                         const bool users,
                         const bool services,
                         const bool browserExtensions,
-                        const bool notifyOnFirstScan)
+                        const bool notifyOnFirstScan,
+                        const bool runtimeJavaInventory)
 {
     m_spInfo = spInfo;
     m_reportDiffFunction = std::move(reportDiffFunction);
@@ -491,6 +497,7 @@ void Syscollector::init(const std::shared_ptr<ISysInfo>& spInfo,
     m_users = users;
     m_services = services;
     m_browserExtensions = browserExtensions;
+    m_runtimeJavaInventory = runtimeJavaInventory;
 
     auto dbSync = std::make_unique<DBSync>(HostType::AGENT, DbEngineType::SQLITE3, dbPath, getCreateStatement(), DbManagement::PERSISTENT);
     auto normalizer = std::make_unique<SysNormalizer>(normalizerConfigPath, normalizerType);
@@ -505,7 +512,8 @@ void Syscollector::init(const std::shared_ptr<ISysInfo>& spInfo,
     // Initialize document counts from database
     initializeDocumentCounts();
 
-    m_allCollectorsDisabled = !(m_hardware || m_os || m_network || m_packages || m_ports || m_processes || m_hotfixes || m_groups || m_users || m_services || m_browserExtensions);
+    m_allCollectorsDisabled = !(m_hardware || m_os || m_network || m_packages || m_ports || m_processes || m_hotfixes || m_groups || m_users || m_services || m_browserExtensions ||
+                                m_runtimeJavaInventory);
     m_dataCleanRetries = 1;  // Default retries for data clean
 
     // Check disabled collectors with existing data
@@ -797,6 +805,10 @@ std::pair<nlohmann::json, uint64_t> Syscollector::ecsData(const nlohmann::json& 
     else if (table == BROWSER_EXTENSIONS_TABLE)
     {
         ret = ecsBrowserExtensionsData(data, createFields);
+    }
+    else if (table == RUNTIME_JAVA_COMPONENTS_TABLE)
+    {
+        ret = ecsRuntimeJavaComponentsData(data, createFields);
     }
 
     if (createFields)
@@ -1295,6 +1307,33 @@ nlohmann::json Syscollector::ecsBrowserExtensionsData(const nlohmann::json& orig
     setJsonField(ret, originalData, "/package/version", "package_version_", createFields);
     setJsonField(ret, originalData, "/package/visible", "package_visible", createFields, true);
     setJsonField(ret, originalData, "/user/id", "user_id", createFields);
+
+    return ret;
+}
+
+nlohmann::json Syscollector::ecsRuntimeJavaComponentsData(const nlohmann::json& originalData, bool createFields)
+{
+    nlohmann::json ret;
+
+    setJsonField(ret, originalData, "/process/pid", "pid", createFields);
+    setJsonField(ret, originalData, "/process/name", "process_name", createFields);
+    setJsonField(ret, originalData, "/process/command_line", "process_cmdline", createFields);
+    setJsonField(ret, originalData, "/process/start", "process_start", createFields);
+    setJsonField(ret, originalData, "/file/path", "runtime_path", createFields);
+    setJsonField(ret, originalData, "/package/type", "package_type", createFields);
+    setJsonField(ret, originalData, "/package/name", "artifact_id", createFields);
+    setJsonField(ret, originalData, "/package/version", "version_", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/group_id", "group_id", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/archive_path", "archive_path", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/path_in_archive", "path_in_archive", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/purl", "purl", createFields);
+    setJsonField(ret, originalData, "/file/hash/sha1", "sha1", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/evidence_source", "evidence_source", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/confidence", "confidence", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/discovery_source", "discovery_source", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/discovered_at", "discovered_at", createFields);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/is_direct_runtime_target", "is_direct_runtime_target", createFields, true);
+    setJsonField(ret, originalData, "/wazuh/runtime_java/is_nested", "is_nested", createFields, true);
 
     return ret;
 }
@@ -1808,6 +1847,31 @@ void Syscollector::scanBrowserExtensions()
     }
 }
 
+nlohmann::json Syscollector::getRuntimeJavaComponentsData()
+{
+    RuntimeJavaInventory::Discoverer discoverer;
+    auto components = discoverer.collect(m_logFunction);
+
+    for (auto& component : components)
+    {
+        sanitizeJsonValue(component);
+        component["checksum"] = getItemChecksum(component);
+    }
+
+    return components;
+}
+
+void Syscollector::scanRuntimeJavaComponents()
+{
+    if (m_runtimeJavaInventory)
+    {
+        m_logFunction(LOG_DEBUG_VERBOSE, "Starting runtime Java components scan");
+        const auto& runtimeJavaComponentsData { getRuntimeJavaComponentsData() };
+        updateChanges(RUNTIME_JAVA_COMPONENTS_TABLE, runtimeJavaComponentsData);
+        m_logFunction(LOG_DEBUG_VERBOSE, "Ending runtime Java components scan");
+    }
+}
+
 void Syscollector::scan()
 {
     if (m_stopping.load())
@@ -1852,6 +1916,7 @@ void Syscollector::scan()
     TRY_CATCH_TASK(scanHotfixes);
     TRY_CATCH_TASK(scanPorts);
     TRY_CATCH_TASK(scanProcesses);
+    TRY_CATCH_TASK(scanRuntimeJavaComponents);
     TRY_CATCH_TASK(scanGroups);
     TRY_CATCH_TASK(scanUsers);
     TRY_CATCH_TASK(scanServices);
@@ -2005,6 +2070,15 @@ std::string Syscollector::getPrimaryKeys([[maybe_unused]] const nlohmann::json& 
         std::string package_version = data.contains("package_version_") ? data["package_version_"].get<std::string>() : "";
 
         ret = browser_name + ":" + user_id + ":" + browser_profile_path + ":" + package_name + ":" + package_version;
+    }
+    else if (table == RUNTIME_JAVA_COMPONENTS_TABLE)
+    {
+        std::string pid = data.contains("pid") ? data["pid"].get<std::string>() : "";
+        std::string runtimePath = data.contains("runtime_path") ? data["runtime_path"].get<std::string>() : "";
+        std::string archivePath = data.contains("archive_path") ? data["archive_path"].get<std::string>() : "";
+        std::string pathInArchive = data.contains("path_in_archive") ? data["path_in_archive"].get<std::string>() : "";
+
+        ret = pid + ":" + runtimePath + ":" + archivePath + ":" + pathInArchive;
     }
 
     return ret;
@@ -2310,7 +2384,8 @@ void Syscollector::persistDifference(const std::string& id, Operation operation,
     // VD tables: system (os), packages, hotfixes
     bool isVDTable = (index == SYSCOLLECTOR_SYNC_INDEX_SYSTEM ||
                       index == SYSCOLLECTOR_SYNC_INDEX_PACKAGES ||
-                      index == SYSCOLLECTOR_SYNC_INDEX_HOTFIXES);
+                      index == SYSCOLLECTOR_SYNC_INDEX_HOTFIXES ||
+                      index == SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS);
 
     if (isVDTable && m_spSyncProtocolVD)
     {
@@ -3588,7 +3663,8 @@ void Syscollector::initializeDocumentCounts()
         OS_TABLE, HW_TABLE, PACKAGES_TABLE, HOTFIXES_TABLE,
         PROCESSES_TABLE, PORTS_TABLE, NET_IFACE_TABLE,
         NET_PROTOCOL_TABLE, NET_ADDRESS_TABLE, USERS_TABLE,
-        GROUPS_TABLE, SERVICES_TABLE, BROWSER_EXTENSIONS_TABLE
+        GROUPS_TABLE, SERVICES_TABLE, BROWSER_EXTENSIONS_TABLE,
+        RUNTIME_JAVA_COMPONENTS_TABLE
     };
 
     for (const auto& table : tables)
@@ -4014,6 +4090,11 @@ void Syscollector::checkDisabledCollectorsIndicesWithData()
     if (!m_processes && hasDataInTable(PROCESSES_TABLE))
     {
         m_disabledCollectorsIndicesWithData.push_back(SYSCOLLECTOR_SYNC_INDEX_PROCESSES);
+    }
+
+    if (!m_runtimeJavaInventory && hasDataInTable(RUNTIME_JAVA_COMPONENTS_TABLE))
+    {
+        m_disabledCollectorsIndicesWithData.push_back(SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS);
     }
 
     if (!m_ports && hasDataInTable(PORTS_TABLE))
@@ -4780,7 +4861,8 @@ std::string Syscollector::getFirstPrimaryKeyField(const std::string& tableName) 
         {USERS_TABLE, USERS_ORDER_BY},
         {GROUPS_TABLE, GROUPS_ORDER_BY},
         {SERVICES_TABLE, SERVICES_ORDER_BY},
-        {BROWSER_EXTENSIONS_TABLE, BROWSER_EXTENSIONS_ORDER_BY}
+        {BROWSER_EXTENSIONS_TABLE, BROWSER_EXTENSIONS_ORDER_BY},
+        {RUNTIME_JAVA_COMPONENTS_TABLE, RUNTIME_JAVA_COMPONENTS_ORDER_BY}
     };
 
     auto it = tableOrderByFields.find(tableName);

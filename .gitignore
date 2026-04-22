@@ -175,5 +175,7 @@ wazuh.tgz
 src/*.log
 src/result-*.txt
 
+# Local assistant metadata
+.serena/
 # Tool files
 tools/repository_bumper_*

@@ -76,6 +76,15 @@ ENV CC="/usr/local/gcc-14.3.0/bin/gcc"
 ENV CXX="/usr/local/gcc-14.3.0/bin/g++"
 
 # -------------------------------------------------------------------
+# Go toolchain (runtime-java helper build)
+# -------------------------------------------------------------------
+ENV GO_VERSION=1.22.12
+RUN curl -L https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz -o /tmp/go.tar.gz && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm -f /tmp/go.tar.gz
+ENV PATH="/usr/local/go/bin:${PATH}"
+
+# -------------------------------------------------------------------
 # Add the script and helper_functions to build the Debian package
 # -------------------------------------------------------------------
 ADD build.sh /usr/local/bin/build_package

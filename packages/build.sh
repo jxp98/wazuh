@@ -9,6 +9,27 @@
 # Foundation.
 set -e
 
+copy_runtime_java_normalizer_source() {
+  local source_dir="$1"
+  local helper_source=""
+
+  for candidate in "runtime-java-normalizer" "./runtime-java-normalizer" "../runtime-java-normalizer"; do
+    if [ -d "$candidate" ]; then
+      helper_source="$candidate"
+      break
+    fi
+  done
+
+  if [ -n "$helper_source" ]; then
+    mkdir -p "${source_dir}/tools"
+    rm -rf "${source_dir}/tools/runtime-java-normalizer"
+    cp -R "$helper_source" "${source_dir}/tools/runtime-java-normalizer"
+    echo "[runtime-java] 已将 helper 源码复制到 ${source_dir}/tools/runtime-java-normalizer"
+  else
+    echo "[runtime-java] 未找到 runtime-java-normalizer 源码目录，agent 包将不会内置该 helper"
+  fi
+}
+
 build_directories() {
   local build_folder=$1
   local wazuh_dir="$2"
@@ -25,6 +46,8 @@ build_directories() {
     source_dir="${build_folder}/${package_name}"
     cp -R $wazuh_dir "$source_dir"
   fi
+
+  copy_runtime_java_normalizer_source "$source_dir"
   echo "$source_dir"
 }
 

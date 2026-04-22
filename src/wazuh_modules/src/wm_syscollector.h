@@ -37,6 +37,7 @@ typedef struct wm_sys_flags_t {
     unsigned int users:1;                   // Users inventory
     unsigned int services:1;                // Services inventory
     unsigned int browser_extensions:1;      // Browser extensions inventory
+    unsigned int runtime_java_inventory:1;  // 运行态 Java 组件库存
 } wm_sys_flags_t;
 
 typedef struct wm_sys_state_t {

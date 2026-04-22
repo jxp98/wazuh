@@ -297,7 +297,35 @@ constexpr auto BROWSER_EXTENSIONS_SQL_STATEMENT
         sync INTEGER DEFAULT 0,
         checksum TEXT,
         version INTEGER NOT NULL DEFAULT 1,
-        PRIMARY KEY (browser_name,user_id,browser_profile_path,package_name,package_version_)) WITHOUT ROWID;)"
+    PRIMARY KEY (browser_name,user_id,browser_profile_path,package_name,package_version_)) WITHOUT ROWID;)"
+};
+
+constexpr auto RUNTIME_JAVA_COMPONENTS_SQL_STATEMENT
+{
+    R"(CREATE TABLE dbsync_runtime_java_components (
+        pid TEXT,
+        process_name TEXT,
+        process_cmdline TEXT,
+        process_start TEXT,
+        runtime_path TEXT,
+        archive_path TEXT,
+        path_in_archive TEXT,
+        package_type TEXT,
+        group_id TEXT,
+        artifact_id TEXT,
+        version_ TEXT,
+        purl TEXT,
+        sha1 TEXT,
+        evidence_source TEXT,
+        confidence TEXT,
+        discovery_source TEXT,
+        is_direct_runtime_target INTEGER,
+        is_nested INTEGER,
+        discovered_at TEXT,
+        sync INTEGER DEFAULT 0,
+        checksum TEXT,
+        version INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (pid, runtime_path, archive_path, path_in_archive)) WITHOUT ROWID;)"
 };
 
 constexpr auto TABLE_METADATA_SQL_STATEMENT
@@ -321,6 +349,7 @@ constexpr auto USERS_TABLE                  { "dbsync_users"                };
 constexpr auto GROUPS_TABLE                 { "dbsync_groups"               };
 constexpr auto SERVICES_TABLE               { "dbsync_services"             };
 constexpr auto BROWSER_EXTENSIONS_TABLE     { "dbsync_browser_extensions"   };
+constexpr auto RUNTIME_JAVA_COMPONENTS_TABLE { "dbsync_runtime_java_components" };
 
 constexpr auto METADATA_TABLE               { "table_metadata"              };
 
@@ -339,6 +368,7 @@ constexpr auto USERS_PK_FIELDS              { "user_name" };
 constexpr auto GROUPS_PK_FIELDS             { "group_name" };
 constexpr auto SERVICES_PK_FIELDS           { "service_id, file_path" };
 constexpr auto BROWSER_EXTENSIONS_PK_FIELDS { "browser_name, user_id, browser_profile_path, package_name, package_version_" };
+constexpr auto RUNTIME_JAVA_COMPONENTS_PK_FIELDS { "pid, runtime_path, archive_path, path_in_archive" };
 
 // Simplified ordering fields for document limit management
 // Most tables use first PK field only, but some use multiple for better stability
@@ -355,3 +385,4 @@ constexpr auto USERS_ORDER_BY               { "user_name" };
 constexpr auto GROUPS_ORDER_BY              { "group_name" };
 constexpr auto SERVICES_ORDER_BY            { "service_id" };
 constexpr auto BROWSER_EXTENSIONS_ORDER_BY  { "browser_name" };
+constexpr auto RUNTIME_JAVA_COMPONENTS_ORDER_BY { "pid, runtime_path" };

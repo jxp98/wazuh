@@ -48,6 +48,7 @@ extern "C" {
 #define SYSCOLLECTOR_SYNC_INDEX_GROUPS "wazuh-states-inventory-groups"
 #define SYSCOLLECTOR_SYNC_INDEX_SERVICES "wazuh-states-inventory-services"
 #define SYSCOLLECTOR_SYNC_INDEX_BROWSER_EXTENSIONS "wazuh-states-inventory-browser-extensions"
+#define SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS "wazuh-states-inventory-runtime-java-components"
 #define SYSCOLLECTOR_SYNC_INDEX_VULNERABILITIES "wazuh-states-vulnerabilities"
 
 typedef void((*log_callback_t)(const modules_log_level_t level, const char* log, const char* tag));
@@ -76,7 +77,8 @@ EXPORTED void syscollector_init(const unsigned int inverval,
                                 const bool users,
                                 const bool services,
                                 const bool browserExtensions,
-                                const bool notifyOnFirstScan);
+                                const bool notifyOnFirstScan,
+                                const bool runtimeJavaInventory);
 
 EXPORTED void syscollector_stop();
 EXPORTED void syscollector_start();
@@ -135,7 +137,8 @@ typedef void(*syscollector_init_func)(const unsigned int inverval,
                                       const bool users,
                                       const bool services,
                                       const bool browserExtensions,
-                                      const bool notifyOnFirstScan);
+                                      const bool notifyOnFirstScan,
+                                      const bool runtimeJavaInventory);
 
 typedef void(*syscollector_start_func)();
 typedef void(*syscollector_stop_func)();
