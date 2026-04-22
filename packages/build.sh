@@ -13,7 +13,7 @@ copy_runtime_java_normalizer_source() {
   local source_dir="$1"
   local helper_source=""
 
-  for candidate in "runtime-java-normalizer" "./runtime-java-normalizer" "../runtime-java-normalizer"; do
+  for candidate in "/runtime-java-normalizer" "runtime-java-normalizer" "./runtime-java-normalizer" "../runtime-java-normalizer"; do
     if [ -d "$candidate" ]; then
       helper_source="$candidate"
       break

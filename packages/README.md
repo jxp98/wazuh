@@ -47,6 +47,8 @@ wazuh# cd packages
 
 ***Note1:** If we don't use this flag, will the script use the current directory where *generate_package.sh* is located.
 
+***Note 1.1:** When using local sources and a sibling directory named *runtime-java-normalizer* exists next to the Wazuh repository, the package builder automatically mounts it into the build container and includes the helper in the Linux agent package.
+
 ****Note 2:** If the package is not a release package, a short hash commit based on the git command `git rev-parse --short HEAD` will be appended to the end of the name. The default length of the short hash is determined by the Git command [git rev-parse --short[=length]](https://git-scm.com/docs/git-rev-parse#Documentation/git-rev-parse.txt---shortlength:~:text=interpreted%20as%20usual.-,%2D%2Dshort%5B%3Dlength%5D,-Same%20as%20%2D%2Dverify).
 
 **Manager Package Notes:**

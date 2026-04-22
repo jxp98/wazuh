@@ -27,6 +27,8 @@ CHECKSUM="no"
 FUTURE="no"
 IS_STAGE="no"
 FORCE_OSSEC_PATH="no"
+LOCAL_SOURCE_PATH=""
+RUNTIME_JAVA_NORMALIZER_VOL=""
 
 
 trap ctrl_c INT
@@ -51,6 +53,28 @@ download_file() {
         (cd ${DESTDIR} && curl -sO ${URL})
     elif command -v wget > /dev/null 2>&1 ; then
         wget ${URL} -P ${DESTDIR} -q
+    fi
+}
+
+configure_runtime_java_normalizer_mount() {
+    local wazuh_source_path="$1"
+    local helper_source_path=""
+    local source_parent=""
+
+    if [ -z "${wazuh_source_path}" ] || [ ! -d "${wazuh_source_path}" ]; then
+        RUNTIME_JAVA_NORMALIZER_VOL=""
+        return 0
+    fi
+
+    source_parent="$(cd "${wazuh_source_path}/.." && pwd -P)"
+    helper_source_path="${source_parent}/runtime-java-normalizer"
+
+    if [ -d "${helper_source_path}" ]; then
+        RUNTIME_JAVA_NORMALIZER_VOL="-v ${helper_source_path}:/runtime-java-normalizer:Z"
+        echo "[runtime-java] 将挂载同级 helper 源码目录 ${helper_source_path}" >&2
+    else
+        RUNTIME_JAVA_NORMALIZER_VOL=""
+        echo "[runtime-java] 未找到同级 helper 源码目录 ${helper_source_path}，agent 包将不会内置该 helper" >&2
     fi
 }
 
@@ -84,6 +108,7 @@ build_pkg() {
         -e WAZUH_BRANCH="${BRANCH}" \
         -e WAZUH_VERBOSE="${VERBOSE}" \
         ${CUSTOM_CODE_VOL} \
+        ${RUNTIME_JAVA_NORMALIZER_VOL} \
         ${CONTAINER_NAME}:${DOCKER_TAG} \
         ${REVISION} ${JOBS} ${DEBUG} \
         ${CHECKSUM} ${FUTURE} ${SRC}|| return 1
@@ -210,7 +235,8 @@ main() {
             ;;
         "--sources")
             if [ -n "$2" ]; then
-               CUSTOM_CODE_VOL="-v $2:/wazuh-local-src:Z"
+               LOCAL_SOURCE_PATH="$(cd "$2" && pwd -P)"
+               CUSTOM_CODE_VOL="-v ${LOCAL_SOURCE_PATH}:/wazuh-local-src:Z"
                shift 2
             else
                 help 1
@@ -251,7 +277,12 @@ main() {
 
     # Add a default source only if neither the branch nor a custom code volume is defined.
     if [ -z "${CUSTOM_CODE_VOL}" ] && [ -z "${BRANCH}" ]; then
+        LOCAL_SOURCE_PATH="$WAZUH_PATH"
         CUSTOM_CODE_VOL="-v $WAZUH_PATH:/wazuh-local-src:Z"
+    fi
+
+    if [ -n "${LOCAL_SOURCE_PATH}" ]; then
+        configure_runtime_java_normalizer_mount "${LOCAL_SOURCE_PATH}"
     fi
 
     # Set default INSTALLATION_PATH based on TARGET if not explicitly provided
