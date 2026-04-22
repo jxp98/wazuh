@@ -24,9 +24,9 @@ copy_runtime_java_normalizer_source() {
     mkdir -p "${source_dir}/tools"
     rm -rf "${source_dir}/tools/runtime-java-normalizer"
     cp -R "$helper_source" "${source_dir}/tools/runtime-java-normalizer"
-    echo "[runtime-java] 已将 helper 源码复制到 ${source_dir}/tools/runtime-java-normalizer"
+    echo "[runtime-java] 已将 helper 源码复制到 ${source_dir}/tools/runtime-java-normalizer" >&2
   else
-    echo "[runtime-java] 未找到 runtime-java-normalizer 源码目录，agent 包将不会内置该 helper"
+    echo "[runtime-java] 未找到 runtime-java-normalizer 源码目录，agent 包将不会内置该 helper" >&2
   fi
 }
 
@@ -113,7 +113,12 @@ if [ ! -d "/wazuh-local-src" ] ; then
     short_commit_hash="$(curl -s https://api.github.com/repos/wazuh/wazuh/commits/${WAZUH_BRANCH} \
                           | grep '"sha"' | head -n 1| cut -d '"' -f 4 | cut -c 1-7)"
 else
-      short_commit_hash="$(cd /wazuh-local-src && git rev-parse --short=7 HEAD)"
+      if short_commit_hash="$(git -C /wazuh-local-src rev-parse --short=7 HEAD 2>/dev/null)"; then
+          echo "[packages] 使用本地源码 Git 提交 ${short_commit_hash} 参与打包"
+      else
+          short_commit_hash="local"
+          echo "[packages] 警告：/wazuh-local-src 在容器内不可识别为 Git 仓库，继续使用占位提交号 ${short_commit_hash} 打包" >&2
+      fi
 fi
 
 # Build directories
