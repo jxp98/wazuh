@@ -5,7 +5,7 @@
 #include <utility>
 #include <vector>
 
-#include <nlohmann/json.hpp>
+#include "json.hpp"
 
 #include "logging_helper.h"
 
