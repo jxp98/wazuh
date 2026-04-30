@@ -81,6 +81,6 @@ get_package_and_checksum(){
         sha512sum wazuh-${BUILD_TARGET}-*deb > /var/local/wazuh/${symbols_deb_file}.sha512
     fi
 
-    find ${pkg_path} -type f -name "wazuh-${BUILD_TARGET}_*deb" -exec mv {} /var/local/wazuh/${deb_file} \;
-    find ${pkg_path} -type f -name "wazuh-${BUILD_TARGET}-dbg_*deb" -exec mv {} /var/local/wazuh/${symbols_deb_file} \;
+    find ${pkg_path} -maxdepth 1 -type f -name "wazuh-${BUILD_TARGET}_*deb" -exec mv {} /var/local/wazuh/${deb_file} \;
+    find ${pkg_path} -maxdepth 1 -type f -name "wazuh-${BUILD_TARGET}-dbg_*deb" -exec mv {} /var/local/wazuh/${symbols_deb_file} \;
 }

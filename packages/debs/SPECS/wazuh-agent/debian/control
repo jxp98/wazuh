@@ -2,13 +2,13 @@ Source: wazuh-agent
 Section: admin
 Priority: extra
 Maintainer: Wazuh <info@wazuh.com>
-Build-Depends: debhelper (>= 7.0.50~), make, gcc, linux-libc-dev, gawk, libaudit-dev, selinux-basics
+Build-Depends: debhelper (>= 7.0.50~), make, gcc, linux-libc-dev, gawk, libaudit-dev, selinux-basics, chrpath
 Standards-Version: 3.8.4
 Homepage: https://www.wazuh.com
 
 Package: wazuh-agent
 Architecture: any
-Depends: ${shlibs:Depends}, libc6 (>= 2.7), lsb-release, debconf, adduser, procps
+Depends: ${misc:Depends}, libc6 (>= 2.7), lsb-release, debconf, adduser, procps, python3, libstdc++6, libgcc-s1 | libgcc1, zlib1g, libzstd1, libelf1
 Conflicts: ossec-hids-agent, ossec-hids, wazuh-api
 Breaks: ossec-hids-agent, ossec-hids
 Description: Wazuh agent

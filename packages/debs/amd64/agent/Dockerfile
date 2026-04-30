@@ -10,7 +10,7 @@ RUN echo "deb http://archive.debian.org/debian/ wheezy contrib main non-free" > 
     apt-get install -y --force-yes \
     curl gcc make sudo wget expect gnupg perl-base=5.14.2-21+deb7u3 perl \
     libc-bin=2.13-38+deb7u10 libc6=2.13-38+deb7u10 libc6-dev build-essential \
-    cdbs devscripts equivs automake autoconf libtool libaudit-dev selinux-basics \
+    cdbs devscripts equivs automake autoconf libtool libaudit-dev selinux-basics chrpath \
     libdb5.1=5.1.29-5 libdb5.1-dev libssl1.0.0=1.0.1e-2+deb7u20 procps gawk libsigsegv2
 
 # -------------------------------------------------------------------

@@ -32,6 +32,11 @@ export CXX=""
 	dh $@
 
 override_dh_shlibdeps:
+	# Wazuh packages private shared libraries with non-standard SONAME/versioning.
+	# On the legacy Debian 7 build image, dpkg-shlibdeps cannot resolve them
+	# reliably for an Ubuntu 24 target package, so runtime dependencies are
+	# maintained explicitly in debian/control instead.
+	:
 
 override_dh_auto_configure:
 
@@ -97,6 +102,23 @@ override_dh_install:
 	# Copying to target
 	mkdir -p ${TARGET_DIR}$(INSTALLATION_DIR)/
 	cp -r $(INSTALLATION_DIR)/. $(TARGET_DIR)$(INSTALLATION_DIR)/
+
+	# Keep only relocatable runtime search paths in packaged ELF files.
+	if command -v chrpath >/dev/null 2>&1; then \
+		find ${TARGET_DIR}$(INSTALLATION_DIR)/bin -maxdepth 1 -type f -exec sh -c 'for file do \
+			if readelf -d "$$file" 2>/dev/null | grep -Eq "(RPATH|RUNPATH)"; then \
+				chrpath -r "\$$ORIGIN/../lib" "$$file"; \
+			fi; \
+		done' sh {} +; \
+		find ${TARGET_DIR}$(INSTALLATION_DIR)/lib -maxdepth 1 -type f -name "*.so*" -exec sh -c 'for file do \
+			if readelf -d "$$file" 2>/dev/null | grep -Eq "(RPATH|RUNPATH)"; then \
+				chrpath -r "\$$ORIGIN" "$$file"; \
+			fi; \
+		done' sh {} +; \
+	else \
+		echo "Error: chrpath is required to normalize packaged RPATH entries." >&2; \
+		exit 1; \
+	fi
 
 	# Copying install scripts to /usr/share
 	mkdir -p ${TARGET_DIR}$(INSTALLATION_SCRIPTS_DIR)/

@@ -30,6 +30,46 @@ copy_runtime_java_normalizer_source() {
   fi
 }
 
+sanitize_copied_source() {
+  local source_dir="$1"
+  local candidate=""
+  local artifact=""
+  local cleaned="no"
+
+  if [ -e "${source_dir}/.git" ]; then
+    rm -rf "${source_dir}/.git"
+    cleaned="yes"
+  fi
+
+  for candidate in "${source_dir}/src" "${source_dir}/tools/runtime-java-normalizer"; do
+    if [ ! -d "${candidate}" ]; then
+      continue
+    fi
+
+    while IFS= read -r -d '' artifact; do
+      rm -rf "${artifact}"
+      cleaned="yes"
+    done < <(find "${candidate}" -type d \( -name build -o -name CMakeFiles \) -print0)
+
+    while IFS= read -r -d '' artifact; do
+      rm -f "${artifact}"
+      cleaned="yes"
+    done < <(find "${candidate}" -type f \( -name CMakeCache.txt -o -name cmake_install.cmake \) -print0)
+  done
+
+  # Remove copied package outputs from the host workspace. Otherwise later
+  # artifact collection can pick an older .deb from the copied source tree and
+  # overwrite the package that was just built in the container.
+  if [ -d "${source_dir}/packages/output" ]; then
+    rm -rf "${source_dir}/packages/output"
+    cleaned="yes"
+  fi
+
+  if [ "${cleaned}" = "yes" ]; then
+    echo "[packages] 已清理复制源码中的宿主机构建缓存，避免 CMake 路径冲突" >&2
+  fi
+}
+
 build_directories() {
   local build_folder=$1
   local wazuh_dir="$2"
@@ -48,6 +88,7 @@ build_directories() {
   fi
 
   copy_runtime_java_normalizer_source "$source_dir"
+  sanitize_copied_source "$source_dir"
   echo "$source_dir"
 }
 
@@ -113,7 +154,7 @@ if [ ! -d "/wazuh-local-src" ] ; then
     short_commit_hash="$(curl -s https://api.github.com/repos/wazuh/wazuh/commits/${WAZUH_BRANCH} \
                           | grep '"sha"' | head -n 1| cut -d '"' -f 4 | cut -c 1-7)"
 else
-      if short_commit_hash="$(git -C /wazuh-local-src rev-parse --short=7 HEAD 2>/dev/null)"; then
+      if short_commit_hash="$(cd /wazuh-local-src && git rev-parse --short=7 HEAD 2>/dev/null)"; then
           echo "[packages] 使用本地源码 Git 提交 ${short_commit_hash} 参与打包"
       else
           short_commit_hash="local"
