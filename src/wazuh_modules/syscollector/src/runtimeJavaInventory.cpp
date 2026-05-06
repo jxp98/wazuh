@@ -894,6 +894,19 @@ namespace
         return record;
     }
 
+    void ensureRuntimeJavaPersistenceFields(nlohmann::json& record)
+    {
+        if (!record.contains("archive_path") || record["archive_path"].is_null())
+        {
+            record["archive_path"] = "";
+        }
+
+        if (!record.contains("path_in_archive") || record["path_in_archive"].is_null())
+        {
+            record["path_in_archive"] = "";
+        }
+    }
+
     void appendProcessContext(nlohmann::json& record,
                               const int pid,
                               const std::string& processName,
@@ -906,6 +919,11 @@ namespace
         record["process_start"] = processStartTime;
     }
 } // namespace
+
+void RuntimeJavaInventory::Discoverer::ensurePersistenceFields(nlohmann::json& record)
+{
+    ensureRuntimeJavaPersistenceFields(record);
+}
 
 std::vector<std::string> RuntimeJavaInventory::Discoverer::splitCmdlineBuffer(const std::string& rawBuffer)
 {
@@ -1176,6 +1194,7 @@ nlohmann::json RuntimeJavaInventory::Discoverer::collect(const Logger& logger) c
         {
             for (auto& component : normalizedComponents)
             {
+                RuntimeJavaInventory::Discoverer::ensurePersistenceFields(component);
                 appendProcessContext(component, pid, processName, processStartTime, args);
                 components.push_back(std::move(component));
             }

@@ -233,7 +233,18 @@ void Syscollector::notifyChange(ReturnTypeCallback result, const nlohmann::json&
 {
     if (DB_ERROR == result)
     {
-        m_logFunction(LOG_ERROR, data.dump());
+        if (m_logFunction)
+        {
+            std::string errorMessage {"DBSync failed while processing table " + table};
+
+            if (data.contains("exception") && data["exception"].is_string())
+            {
+                errorMessage += ": " + data["exception"].get<std::string>();
+            }
+
+            m_logFunction(LOG_ERROR, errorMessage);
+            m_logFunction(LOG_ERROR, data.dump());
+        }
     }
     else
     {
@@ -358,7 +369,7 @@ void Syscollector::updateChanges(const std::string& table,
     {
         [this, table](ReturnTypeCallback result, const nlohmann::json & data)
         {
-            if (result == INSERTED || result == MODIFIED || result == DELETED)
+            if (result == INSERTED || result == MODIFIED || result == DELETED || result == DB_ERROR)
             {
                 notifyChange(result, data, table);
             }

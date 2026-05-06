@@ -52,6 +52,35 @@ TEST(RuntimeJavaInventoryTest, normalizeRuntimePathStripsDeletedSuffix)
     EXPECT_EQ(normalizedPath, "/opt/app/lib/log4j-core-2.17.2.jar");
 }
 
+TEST(RuntimeJavaInventoryTest, ensurePersistenceFieldsAddsMissingCompositeKeyFields)
+{
+    nlohmann::json component {
+        {"runtime_path", "/opt/apache-tomcat-8.5.82/bin/bootstrap.jar"},
+        {"artifact_id", "Apache Tomcat Bootstrap"}
+    };
+
+    RuntimeJavaInventory::Discoverer::ensurePersistenceFields(component);
+
+    ASSERT_TRUE(component.contains("archive_path"));
+    ASSERT_TRUE(component.contains("path_in_archive"));
+    EXPECT_EQ(component["archive_path"], "");
+    EXPECT_EQ(component["path_in_archive"], "");
+}
+
+TEST(RuntimeJavaInventoryTest, ensurePersistenceFieldsPreservesExistingCompositeKeyFields)
+{
+    nlohmann::json component {
+        {"runtime_path", "demo-app.jar"},
+        {"archive_path", "demo-app.jar"},
+        {"path_in_archive", "BOOT-INF/lib/log4j-core.jar"}
+    };
+
+    RuntimeJavaInventory::Discoverer::ensurePersistenceFields(component);
+
+    EXPECT_EQ(component["archive_path"], "demo-app.jar");
+    EXPECT_EQ(component["path_in_archive"], "BOOT-INF/lib/log4j-core.jar");
+}
+
 TEST(RuntimeJavaInventoryTest, inspectArchiveUsesPomPropertiesWhenAvailable)
 {
     const RuntimeJavaInventory::JarCandidate candidate {

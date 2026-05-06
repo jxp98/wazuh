@@ -23,6 +23,7 @@ namespace RuntimeJavaInventory
         public:
             using Logger = std::function<void(const modules_log_level_t, const std::string&)>;
 
+            static void ensurePersistenceFields(nlohmann::json& record);
             static std::vector<std::string> splitCmdlineBuffer(const std::string& rawBuffer);
             static std::vector<JarCandidate> extractCandidatesFromArgs(const std::vector<std::string>& args,
                                                                        const std::string& cwd);
