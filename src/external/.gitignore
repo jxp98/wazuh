@@ -4,3 +4,4 @@
 !indexer-plugins/
 indexer-plugins/*
 !indexer-plugins/wazuh-states-vulnerabilities-runtime-java.json
+!indexer-plugins/wazuh-states-inventory-runtime-java-components.json

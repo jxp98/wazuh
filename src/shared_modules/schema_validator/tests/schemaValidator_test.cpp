@@ -551,6 +551,91 @@ TEST_F(SchemaValidatorTest, FactoryGetNonExistentValidator)
     EXPECT_EQ(validator, nullptr);
 }
 
+TEST_F(SchemaValidatorTest, FactoryGetRuntimeJavaInventoryValidator)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-inventory-runtime-java-components");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java inventory schema validator not available";
+    }
+
+    EXPECT_EQ(validator->getSchemaName(), "wazuh-states-inventory-runtime-java-components");
+}
+
+TEST_F(SchemaValidatorTest, RuntimeJavaInventoryValidatorAcceptsNumericProcessFields)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-inventory-runtime-java-components");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java inventory schema validator not available";
+    }
+
+    nlohmann::json message = {
+        {"checksum", {{"hash", {{"sha1", "0123456789abcdef0123456789abcdef01234567"}}}}},
+        {"file", {{"path", "/opt/tomcat/bin/bootstrap.jar"}, {"hash", {{"sha1", "89abcdef0123456789abcdef0123456789abcdef"}}}}},
+        {"package", {{"type", "jar"}, {"name", "log4j-core"}, {"version", "2.14.1"}}},
+        {"process", {{"pid", 1234}, {"name", "java"}, {"command_line", "java -jar demo-app.jar"}, {"start", 9302261}}},
+        {"state", {{"modified_at", "2026-05-07T09:00:00.000Z"}, {"document_version", 1}}},
+        {"wazuh", {{"runtime_java", {{"group_id", "org.apache.logging.log4j"},
+                                        {"archive_path", ""},
+                                        {"path_in_archive", "BOOT-INF/lib/log4j-core-2.14.1.jar"},
+                                        {"purl", "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"},
+                                        {"evidence_source", "manifest"},
+                                        {"confidence", "high"},
+                                        {"discovery_source", "classpath"},
+                                        {"discovered_at", "2026-05-07T09:00:00.000Z"},
+                                        {"is_direct_runtime_target", true},
+                                        {"is_nested", true}}}}}
+    };
+
+    auto result = validator->validate(message);
+    EXPECT_TRUE(result.isValid);
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST_F(SchemaValidatorTest, RuntimeJavaInventoryValidatorRejectsStringProcessFields)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-inventory-runtime-java-components");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java inventory schema validator not available";
+    }
+
+    nlohmann::json message = {
+        {"checksum", {{"hash", {{"sha1", "0123456789abcdef0123456789abcdef01234567"}}}}},
+        {"file", {{"path", "/opt/tomcat/bin/bootstrap.jar"}, {"hash", {{"sha1", "89abcdef0123456789abcdef0123456789abcdef"}}}}},
+        {"package", {{"type", "jar"}, {"name", "log4j-core"}, {"version", "2.14.1"}}},
+        {"process", {{"pid", "1234"}, {"name", "java"}, {"command_line", "java -jar demo-app.jar"}, {"start", "9302261"}}},
+        {"state", {{"modified_at", "2026-05-07T09:00:00.000Z"}, {"document_version", 1}}},
+        {"wazuh", {{"runtime_java", {{"group_id", "org.apache.logging.log4j"},
+                                        {"archive_path", ""},
+                                        {"path_in_archive", "BOOT-INF/lib/log4j-core-2.14.1.jar"},
+                                        {"purl", "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"},
+                                        {"evidence_source", "manifest"},
+                                        {"confidence", "high"},
+                                        {"discovery_source", "classpath"},
+                                        {"discovered_at", "2026-05-07T09:00:00.000Z"},
+                                        {"is_direct_runtime_target", true},
+                                        {"is_nested", true}}}}}
+    };
+
+    auto result = validator->validate(message);
+    EXPECT_FALSE(result.isValid);
+    EXPECT_FALSE(result.errors.empty());
+}
+
 // ============================================================================
 // Tests for new types: short, unsigned_long, scaled_float, match_only_text, object
 // ============================================================================

@@ -217,6 +217,49 @@ static std::string getItemId(const nlohmann::json& item, const std::vector<std::
     return Utils::asciiToHex(hash.hash());
 }
 
+static void setJsonIntegerField(nlohmann::json& target,
+                                const nlohmann::json& source,
+                                const std::string& keyPath,
+                                const std::string& jsonKey,
+                                bool createFields)
+{
+    if (createFields || source.contains(jsonKey))
+    {
+        const nlohmann::json::json_pointer pointer(keyPath);
+
+        if (source.contains(jsonKey) && source[jsonKey] != EMPTY_VALUE && source[jsonKey] != UNKNOWN_VALUE)
+        {
+            try
+            {
+                if (source[jsonKey].is_number_integer())
+                {
+                    target[pointer] = source[jsonKey].get<long long>();
+                }
+                else if (source[jsonKey].is_number_unsigned())
+                {
+                    target[pointer] = source[jsonKey].get<unsigned long long>();
+                }
+                else if (source[jsonKey].is_string())
+                {
+                    target[pointer] = std::stoll(source[jsonKey].get<std::string>());
+                }
+                else
+                {
+                    target[pointer] = nullptr;
+                }
+            }
+            catch (...)
+            {
+                target[pointer] = nullptr;
+            }
+        }
+        else
+        {
+            target[pointer] = nullptr;
+        }
+    }
+}
+
 static bool isElementDuplicated(const nlohmann::json& input, const std::pair<std::string, std::string>& keyValue)
 {
     const auto it
@@ -946,32 +989,8 @@ nlohmann::json Syscollector::ecsProcessesData(const nlohmann::json& originalData
     setJsonField(ret, originalData, "/process/name", "name", createFields);
     setJsonField(ret, originalData, "/process/parent/pid", "parent_pid", createFields);
 
-    // Convert pid from string to integer for ECS compliance
-    if (createFields || originalData.contains("pid"))
-    {
-        const nlohmann::json::json_pointer pointer("/process/pid");
-
-        // LCOV_EXCL_START
-        if (originalData.contains("pid") && originalData["pid"] != EMPTY_VALUE && originalData["pid"] != UNKNOWN_VALUE)
-        {
-            try
-            {
-                ret[pointer] = std::stoll(originalData["pid"].get<std::string>());
-            }
-            catch (...)
-            {
-                ret[pointer] = nullptr;
-            }
-        }
-        else
-        {
-            ret[pointer] = nullptr;
-        }
-
-        // LCOV_EXCL_STOP
-    }
-
-    setJsonField(ret, originalData, "/process/start", "start", createFields);
+    setJsonIntegerField(ret, originalData, "/process/pid", "pid", createFields);
+    setJsonIntegerField(ret, originalData, "/process/start", "start", createFields);
     setJsonField(ret, originalData, "/process/state", "state", createFields);
     setJsonField(ret, originalData, "/process/stime", "stime", createFields);
     setJsonField(ret, originalData, "/process/utime", "utime", createFields);
@@ -1326,10 +1345,10 @@ nlohmann::json Syscollector::ecsRuntimeJavaComponentsData(const nlohmann::json& 
 {
     nlohmann::json ret;
 
-    setJsonField(ret, originalData, "/process/pid", "pid", createFields);
+    setJsonIntegerField(ret, originalData, "/process/pid", "pid", createFields);
     setJsonField(ret, originalData, "/process/name", "process_name", createFields);
     setJsonField(ret, originalData, "/process/command_line", "process_cmdline", createFields);
-    setJsonField(ret, originalData, "/process/start", "process_start", createFields);
+    setJsonIntegerField(ret, originalData, "/process/start", "process_start", createFields);
     setJsonField(ret, originalData, "/file/path", "runtime_path", createFields);
     setJsonField(ret, originalData, "/package/type", "package_type", createFields);
     setJsonField(ret, originalData, "/package/name", "artifact_id", createFields);

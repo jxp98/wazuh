@@ -1,0 +1,76 @@
+{
+  "index_patterns": [
+    "wazuh-states-inventory-runtime-java-components*"
+  ],
+  "template": {
+    "settings": {
+      "index": {
+        "number_of_shards": 1,
+        "number_of_replicas": 0
+      }
+    },
+    "mappings": {
+      "date_detection": false,
+      "properties": {
+        "checksum": {
+          "properties": {
+            "hash": {
+              "properties": {
+                "sha1": { "type": "keyword" }
+              }
+            }
+          }
+        },
+        "file": {
+          "properties": {
+            "path": { "type": "keyword" },
+            "hash": {
+              "properties": {
+                "sha1": { "type": "keyword" }
+              }
+            }
+          }
+        },
+        "package": {
+          "properties": {
+            "type": { "type": "keyword" },
+            "name": { "type": "keyword" },
+            "version": { "type": "keyword" }
+          }
+        },
+        "process": {
+          "properties": {
+            "pid": { "type": "long" },
+            "name": { "type": "keyword" },
+            "command_line": { "type": "wildcard" },
+            "start": { "type": "long" }
+          }
+        },
+        "state": {
+          "properties": {
+            "modified_at": { "type": "date" },
+            "document_version": { "type": "unsigned_long" }
+          }
+        },
+        "wazuh": {
+          "properties": {
+            "runtime_java": {
+              "properties": {
+                "group_id": { "type": "keyword" },
+                "archive_path": { "type": "keyword" },
+                "path_in_archive": { "type": "keyword" },
+                "purl": { "type": "keyword" },
+                "evidence_source": { "type": "keyword" },
+                "confidence": { "type": "keyword" },
+                "discovery_source": { "type": "keyword" },
+                "discovered_at": { "type": "date" },
+                "is_direct_runtime_target": { "type": "boolean" },
+                "is_nested": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
