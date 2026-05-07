@@ -636,6 +636,105 @@ TEST_F(SchemaValidatorTest, RuntimeJavaInventoryValidatorRejectsStringProcessFie
     EXPECT_FALSE(result.errors.empty());
 }
 
+TEST_F(SchemaValidatorTest, FactoryGetRuntimeJavaVulnerabilityValidator)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-vulnerabilities-runtime-java");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java vulnerability schema validator not available";
+    }
+
+    EXPECT_EQ(validator->getSchemaName(), "wazuh-states-vulnerabilities-runtime-java");
+}
+
+TEST_F(SchemaValidatorTest, RuntimeJavaVulnerabilityValidatorAcceptsNumericProcessStart)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-vulnerabilities-runtime-java");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java vulnerability schema validator not available";
+    }
+
+    nlohmann::json message = {
+        {"@timestamp", "2026-05-07T09:00:00.000Z"},
+        {"schema_version", "1.0.0"},
+        {"runtime_java",
+         {{"inventory_id", "runtime-java-inventory-1"},
+          {"operation", "index"},
+          {"component",
+           {{"_inventory_id", "runtime-java-inventory-1"},
+            {"package_type", "jar"},
+            {"group_id", "org.apache.logging.log4j"},
+            {"artifact_id", "log4j-core"},
+            {"version", "2.14.1"},
+            {"runtime_path", "/opt/tomcat/lib/log4j-core-2.14.1.jar"},
+            {"sha1", "0123456789abcdef0123456789abcdef01234567"},
+            {"pid", 1234},
+            {"process_name", "java"},
+            {"process_cmdline", "java -jar demo-app.jar"},
+            {"process_start", 9302261}}},
+          {"vulnerability",
+           {{"id", "CVE-2021-44228"},
+            {"severity", "critical"},
+            {"operation", "index"},
+            {"matched_at", "2026-05-07T09:00:01.000Z"}}}}}
+    };
+
+    auto result = validator->validate(message);
+    EXPECT_TRUE(result.isValid);
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST_F(SchemaValidatorTest, RuntimeJavaVulnerabilityValidatorRejectsStringProcessStart)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-vulnerabilities-runtime-java");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java vulnerability schema validator not available";
+    }
+
+    nlohmann::json message = {
+        {"@timestamp", "2026-05-07T09:00:00.000Z"},
+        {"schema_version", "1.0.0"},
+        {"runtime_java",
+         {{"inventory_id", "runtime-java-inventory-1"},
+          {"operation", "index"},
+          {"component",
+           {{"_inventory_id", "runtime-java-inventory-1"},
+            {"package_type", "jar"},
+            {"group_id", "org.apache.logging.log4j"},
+            {"artifact_id", "log4j-core"},
+            {"version", "2.14.1"},
+            {"runtime_path", "/opt/tomcat/lib/log4j-core-2.14.1.jar"},
+            {"sha1", "0123456789abcdef0123456789abcdef01234567"},
+            {"pid", 1234},
+            {"process_name", "java"},
+            {"process_cmdline", "java -jar demo-app.jar"},
+            {"process_start", "9302261"}}},
+          {"vulnerability",
+           {{"id", "CVE-2021-44228"},
+            {"severity", "critical"},
+            {"operation", "index"},
+            {"matched_at", "2026-05-07T09:00:01.000Z"}}}}}
+    };
+
+    auto result = validator->validate(message);
+    EXPECT_FALSE(result.isValid);
+    EXPECT_FALSE(result.errors.empty());
+}
+
 // ============================================================================
 // Tests for new types: short, unsigned_long, scaled_float, match_only_text, object
 // ============================================================================

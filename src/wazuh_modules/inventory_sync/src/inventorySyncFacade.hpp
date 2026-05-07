@@ -1032,30 +1032,39 @@ public:
                                 {
                                     logDebug2(LOGGER_DEFAULT_TAG, "InventorySyncFacade::start: Upserting data...");
 
-                                    // Build metadata using nlohmann::json for automatic escaping
-                                    nlohmann::json metadata;
-                                    metadata["wazuh"]["agent"]["id"] = res.context->agentId;
-                                    metadata["wazuh"]["agent"]["name"] = res.context->agentName;
-                                    metadata["wazuh"]["agent"]["version"] = res.context->agentVersion;
-                                    metadata["wazuh"]["agent"]["groups"] = res.context->groups;
-                                    metadata["wazuh"]["agent"]["host"]["architecture"] = res.context->architecture;
-                                    metadata["wazuh"]["agent"]["host"]["hostname"] = res.context->hostname;
-                                    metadata["wazuh"]["agent"]["host"]["os"]["name"] = res.context->osname;
-                                    metadata["wazuh"]["agent"]["host"]["os"]["platform"] = res.context->osplatform;
-                                    metadata["wazuh"]["agent"]["host"]["os"]["type"] = res.context->ostype;
-                                    metadata["wazuh"]["agent"]["host"]["os"]["version"] = res.context->osversion;
-                                    metadata["wazuh"]["cluster"]["name"] =
+                                    // Merge manager metadata into the inventory document instead of
+                                    // string-splicing JSON fragments. Some documents, such as
+                                    // runtime-java inventory records, already contain a top-level
+                                    // "wazuh" object and concatenation would emit duplicate keys.
+                                    nlohmann::json document = nlohmann::json::parse(
+                                        std::string_view(reinterpret_cast<const char*>(data->data()->data()),
+                                                         data->data()->size()));
+                                    if (!document.is_object())
+                                    {
+                                        throw InventorySyncException("Inventory document is not a JSON object");
+                                    }
+
+                                    auto& wazuhMetadata = document["wazuh"];
+                                    if (!wazuhMetadata.is_null() && !wazuhMetadata.is_object())
+                                    {
+                                        throw InventorySyncException("Inventory document contains a non-object wazuh field");
+                                    }
+
+                                    wazuhMetadata["agent"]["id"] = res.context->agentId;
+                                    wazuhMetadata["agent"]["name"] = res.context->agentName;
+                                    wazuhMetadata["agent"]["version"] = res.context->agentVersion;
+                                    wazuhMetadata["agent"]["groups"] = res.context->groups;
+                                    wazuhMetadata["agent"]["host"]["architecture"] = res.context->architecture;
+                                    wazuhMetadata["agent"]["host"]["hostname"] = res.context->hostname;
+                                    wazuhMetadata["agent"]["host"]["os"]["name"] = res.context->osname;
+                                    wazuhMetadata["agent"]["host"]["os"]["platform"] = res.context->osplatform;
+                                    wazuhMetadata["agent"]["host"]["os"]["type"] = res.context->ostype;
+                                    wazuhMetadata["agent"]["host"]["os"]["version"] = res.context->osversion;
+                                    wazuhMetadata["cluster"]["name"] =
                                         !res.context->clusterName.empty() ? res.context->clusterName : m_clusterName;
 
-                                    // Serialize metadata to string and append FlatBuffer inventory data
                                     thread_local std::string dataString;
-                                    dataString = metadata.dump();
-                                    // Remove closing brace to append inventory data
-                                    dataString.pop_back();
-                                    dataString.append(",");
-                                    // Append inventory data (skip opening brace from FlatBuffer data)
-                                    dataString.append(std::string_view((const char*)data->data()->data() + 1,
-                                                                       data->data()->size() - 1));
+                                    dataString = document.dump();
                                     const auto version = data->version();
                                     const auto indexName = data->index()->string_view();
                                     if (version && version > 0)
@@ -1131,6 +1140,7 @@ public:
                                 logDebug2(LOGGER_DEFAULT_TAG,
                                           "InventorySyncFacade: Running vulnerability scanners for agent %s...",
                                           res.context->agentId.c_str());
+
                                 try
                                 {
                                     if (runtimeJavaMatcherEnabled)

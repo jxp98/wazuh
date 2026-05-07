@@ -2,7 +2,6 @@
 #include "schemaResources.hpp"
 #include <sstream>
 #include <map>
-#include <regex>
 #include <ctime>
 #include <iomanip>
 #include <algorithm>
@@ -19,16 +18,95 @@
 
 namespace SchemaValidator
 {
+    static bool hasDigits(const std::string& value, std::size_t offset, std::size_t count)
+    {
+        if (offset + count > value.size())
+        {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < count; ++i)
+        {
+            if (!std::isdigit(static_cast<unsigned char>(value[offset + i])))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     // Helper function to check if a string is a valid ISO8601 date
     static bool isValidISO8601Date(const std::string& dateStr)
     {
-        // Basic ISO8601 format check: YYYY-MM-DDTHH:MM:SS.sssZ or similar
-        // Also accepts formats like: YYYY-MM-DD, YYYY-MM-DDTHH:MM:SS, etc.
-        // Use static const to compile regex only once
-        static const std::regex iso8601Pattern(
-            R"(^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:\d{2})?)?$)");
-        return std::regex_match(dateStr, iso8601Pattern);
+        // Accepts:
+        // YYYY-MM-DD
+        // YYYY-MM-DDTHH:MM:SS
+        // YYYY-MM-DDTHH:MM:SS.sss
+        // YYYY-MM-DDTHH:MM:SS.sssZ
+        // YYYY-MM-DDTHH:MM:SS.sss+08:00
+        if (dateStr.size() < 10)
+        {
+            return false;
+        }
+
+        if (!hasDigits(dateStr, 0, 4) || dateStr[4] != '-' ||
+            !hasDigits(dateStr, 5, 2) || dateStr[7] != '-' ||
+            !hasDigits(dateStr, 8, 2))
+        {
+            return false;
+        }
+
+        if (dateStr.size() == 10)
+        {
+            return true;
+        }
+
+        if (dateStr.size() < 19 || dateStr[10] != 'T' ||
+            !hasDigits(dateStr, 11, 2) || dateStr[13] != ':' ||
+            !hasDigits(dateStr, 14, 2) || dateStr[16] != ':' ||
+            !hasDigits(dateStr, 17, 2))
+        {
+            return false;
+        }
+
+        std::size_t pos = 19;
+
+        if (pos < dateStr.size() && dateStr[pos] == '.')
+        {
+            const auto fractionStart = ++pos;
+            while (pos < dateStr.size() && std::isdigit(static_cast<unsigned char>(dateStr[pos])))
+            {
+                ++pos;
+            }
+
+            const auto fractionLength = pos - fractionStart;
+            if (fractionLength == 0 || fractionLength > 9)
+            {
+                return false;
+            }
+        }
+
+        if (pos == dateStr.size())
+        {
+            return true;
+        }
+
+        if (dateStr[pos] == 'Z')
+        {
+            return pos + 1 == dateStr.size();
+        }
+
+        if (dateStr[pos] != '+' && dateStr[pos] != '-')
+        {
+            return false;
+        }
+
+        ++pos;
+        return pos + 5 == dateStr.size() &&
+               hasDigits(dateStr, pos, 2) &&
+               dateStr[pos + 2] == ':' &&
+               hasDigits(dateStr, pos + 3, 2);
     }
 
     // Helper function to check if a string is a valid IP address

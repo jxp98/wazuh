@@ -77,7 +77,7 @@
                 "pid": { "type": "long" },
                 "process_name": { "type": "keyword" },
                 "process_cmdline": { "type": "wildcard" },
-                "process_start": { "type": "date" },
+                "process_start": { "type": "long" },
                 "evidence_source": { "type": "keyword" },
                 "confidence": { "type": "keyword" },
                 "discovery_source": { "type": "keyword" },

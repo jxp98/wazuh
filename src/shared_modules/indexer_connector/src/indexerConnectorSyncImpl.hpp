@@ -192,6 +192,20 @@ inline bool validateBulkResponse(const std::string& response)
 
             // Any other error status is a real failure
             std::string errorMsg = "Unknown error";
+            std::string errorType = "unknown";
+            std::string causedByMsg = "unknown";
+            std::string itemIndex = "<unknown>";
+            std::string itemId = "<unknown>";
+
+            if (result.contains("_index") && result["_index"].is_string())
+            {
+                itemIndex = result["_index"].get<std::string>();
+            }
+            if (result.contains("_id") && result["_id"].is_string())
+            {
+                itemId = result["_id"].get<std::string>();
+            }
+
             if (result.contains("error"))
             {
                 const auto& error = result["error"];
@@ -199,16 +213,43 @@ inline bool validateBulkResponse(const std::string& response)
                 {
                     errorMsg = error.get<std::string>();
                 }
-                else if (error.is_object() && error.contains("reason"))
+                else if (error.is_object())
                 {
-                    errorMsg = error["reason"].get<std::string>();
+                    if (error.contains("type") && error["type"].is_string())
+                    {
+                        errorType = error["type"].get<std::string>();
+                    }
+                    if (error.contains("reason") && error["reason"].is_string())
+                    {
+                        errorMsg = error["reason"].get<std::string>();
+                    }
+                    if (error.contains("caused_by") && error["caused_by"].is_object())
+                    {
+                        const auto& causedBy = error["caused_by"];
+                        std::string causedByType = "unknown";
+                        std::string causedByReason = "unknown";
+                        if (causedBy.contains("type") && causedBy["type"].is_string())
+                        {
+                            causedByType = causedBy["type"].get<std::string>();
+                        }
+                        if (causedBy.contains("reason") && causedBy["reason"].is_string())
+                        {
+                            causedByReason = causedBy["reason"].get<std::string>();
+                        }
+                        causedByMsg = causedByType + ": " + causedByReason;
+                    }
                 }
             }
 
             logError(IC_NAME,
-                     "Indexing failure for %s operation (status %d): %s",
+                     "Indexing failure for %s operation (status %d, index=%s, id=%s, error_type=%s, caused_by=%s): "
+                     "%s",
                      operation.c_str(),
                      status,
+                     itemIndex.c_str(),
+                     itemId.c_str(),
+                     errorType.c_str(),
+                     causedByMsg.c_str(),
                      errorMsg.c_str());
             realFailureCount++;
         }
