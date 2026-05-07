@@ -14,7 +14,7 @@ RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 -
     apt-get update
 RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 600 -- \
     apt-get install -y --force-yes apt-utils
-RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 900 -- \
+RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 3600 -- \
     apt-get install -y --force-yes \
     curl g++ bzip2 debhelper gcc rename make sudo wget expect gnupg perl-base perl \
     libc-bin libc6 libc6-dev build-essential dpkg-dev\
@@ -24,7 +24,7 @@ RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 -
 RUN echo "deb-src http://archive.debian.org/debian jessie contrib main non-free" >> /etc/apt/sources.list
 RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 600 -- \
     apt-get update
-RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 900 -- \
+RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 3600 -- \
     apt-get build-dep python3 -y --force-yes
 
 RUN /usr/local/bin/retry.sh --attempts 5 --delay 5 --backoff 2 --max-delay 30 --timeout 360 -- \

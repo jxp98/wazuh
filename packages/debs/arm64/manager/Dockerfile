@@ -12,7 +12,7 @@ RUN echo "deb http://archive.debian.org/debian stretch contrib main non-free" > 
     printf 'Acquire::Retries "5";\nAcquire::http::Timeout "30";\nAcquire::https::Timeout "30";\n' > /etc/apt/apt.conf.d/80-resilience
 RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 600 -- \
     apt-get update
-RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 900 -- \
+RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 3600 -- \
     apt-get install -y --allow-change-held-packages apt apt-utils  \
     curl gcc g++ make sudo expect gnupg \
     perl-base perl wget libc-bin libc6 libc6-dev \
@@ -23,7 +23,7 @@ RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 -
 # Add Debian's source repository and, Install NodeJS 12
 RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 600 -- \
     apt-get update
-RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 900 -- \
+RUN /usr/local/bin/retry.sh --attempts 5 --delay 10 --backoff 2 --max-delay 40 --timeout 3600 -- \
     apt-get build-dep python3.5 -y --allow-change-held-packages
 RUN /usr/local/bin/retry.sh --attempts 4 --delay 10 --backoff 2 --max-delay 40 --timeout 300 -- \
     bash -lc 'curl -fsSL --connect-timeout 20 --max-time 180 https://deb.nodesource.com/setup_12.x | bash -'
