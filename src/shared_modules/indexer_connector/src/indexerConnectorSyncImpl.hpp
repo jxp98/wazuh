@@ -726,12 +726,15 @@ public:
             !query["query"]["bool"].is_object() || !query["query"]["bool"].contains("filter") ||
             !query["query"]["bool"]["filter"].is_array() || query["query"]["bool"]["filter"].size() != 2)
         {
-            query = {{"query",
-                      {{"bool",
-                        {{"filter",
-                          nlohmann::json::array(
-                              {{{"terms", {{"wazuh.agent.id", nlohmann::json::array()}}}},
-                               {{"terms", {{"runtime_java.inventory_id", nlohmann::json::array()}}}})}}}}}}};
+            query = nlohmann::json::object(
+                {{"query",
+                  {{"bool",
+                    {{"filter",
+                      nlohmann::json::array(
+                          {nlohmann::json::object(
+                               {{"terms", {{"wazuh.agent.id", nlohmann::json::array()}}}}),
+                           nlohmann::json::object(
+                               {{"terms", {{"runtime_java.inventory_id", nlohmann::json::array()}}}})})}}}}}});
         }
 
         auto& agentTerms = query["query"]["bool"]["filter"][0]["terms"]["wazuh.agent.id"];

@@ -35,6 +35,13 @@ public:
         m_impl.deleteByQuery(index, agentId);
     }
 
+    void deleteByQuery(const std::string& index,
+                       const std::string& agentId,
+                       const std::vector<std::string>& inventoryIds)
+    {
+        m_impl.deleteByQuery(index, agentId, inventoryIds);
+    }
+
     void executeUpdateByQuery(const std::vector<std::string>& indices, const nlohmann::json& updateQuery)
     {
         m_impl.executeUpdateByQuery(indices, updateQuery);
