@@ -1047,15 +1047,24 @@ public:
                                     metadata["wazuh"]["cluster"]["name"] =
                                         !res.context->clusterName.empty() ? res.context->clusterName : m_clusterName;
 
-                                    // Serialize metadata to string and append FlatBuffer inventory data
+                                    nlohmann::json inventoryData;
+
+                                    try
+                                    {
+                                        inventoryData = nlohmann::json::parse(
+                                            std::string_view(reinterpret_cast<const char*>(data->data()->data()),
+                                                             data->data()->size()));
+                                    }
+                                    catch (const std::exception& e)
+                                    {
+                                        throw InventorySyncException(std::string("Invalid inventory payload JSON: ") +
+                                                                     e.what());
+                                    }
+
+                                    metadata.update(inventoryData, true);
+
                                     thread_local std::string dataString;
                                     dataString = metadata.dump();
-                                    // Remove closing brace to append inventory data
-                                    dataString.pop_back();
-                                    dataString.append(",");
-                                    // Append inventory data (skip opening brace from FlatBuffer data)
-                                    dataString.append(std::string_view((const char*)data->data()->data() + 1,
-                                                                       data->data()->size() - 1));
                                     const auto version = data->version();
                                     const auto indexName = data->index()->string_view();
                                     if (version && version > 0)

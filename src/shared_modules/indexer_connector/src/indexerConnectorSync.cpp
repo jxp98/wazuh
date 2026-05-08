@@ -130,6 +130,13 @@ void IndexerConnectorSync::deleteByQuery(const std::string& index, const std::st
     m_impl->deleteByQuery(index, agentId);
 }
 
+void IndexerConnectorSync::deleteByQuery(const std::string& index,
+                                         const std::string& agentId,
+                                         const std::vector<std::string>& inventoryIds)
+{
+    m_impl->deleteByQuery(index, agentId, inventoryIds);
+}
+
 void IndexerConnectorSync::executeUpdateByQuery(const std::vector<std::string>& indices,
                                                 const nlohmann::json& updateQuery)
 {

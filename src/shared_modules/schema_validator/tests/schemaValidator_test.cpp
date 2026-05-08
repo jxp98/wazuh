@@ -636,6 +636,177 @@ TEST_F(SchemaValidatorTest, RuntimeJavaInventoryValidatorRejectsStringProcessFie
     EXPECT_FALSE(result.errors.empty());
 }
 
+TEST_F(SchemaValidatorTest, FactoryGetRuntimeJavaResultValidator)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-vulnerabilities-runtime-java");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java vulnerability result schema validator not available";
+    }
+
+    EXPECT_EQ(validator->getSchemaName(), "wazuh-states-vulnerabilities-runtime-java");
+}
+
+TEST_F(SchemaValidatorTest, RuntimeJavaResultValidatorAcceptsCurrentDocumentShape)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-vulnerabilities-runtime-java");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java vulnerability result schema validator not available";
+    }
+
+    nlohmann::json message = {
+        {"@timestamp", "2026-05-08T09:00:00.000Z"},
+        {"schema_version", "1.0"},
+        {"wazuh", {{"agent", {{"id", "001"},
+                                 {"name", "test-agent"},
+                                 {"version", "5.0.0"},
+                                 {"groups", nlohmann::json::array({"default"})},
+                                 {"host", {{"hostname", "demo-host"},
+                                            {"architecture", "x86_64"},
+                                            {"os", {{"name", "Ubuntu"},
+                                                     {"platform", "ubuntu"},
+                                                     {"type", "linux"},
+                                                     {"version", "22.04"}}}}}}},
+                    {"cluster", {{"name", "wazuh"}, {"node", "node01"}}},
+                    {"session", {{"id", "42"}, {"module", "syscollector"}, {"scan_mode", "delta"}}}}},
+        {"matcher", {{"source", "runtime-java-matcher"},
+                      {"url", "http://127.0.0.1:8080/runtime-java/match"},
+                      {"request_id", "42"},
+                      {"generated_at", "2026-05-08T09:00:00.000Z"}}},
+        {"runtime_java",
+         {{"inventory_id", "bc20a4ff0d0dc25a8c6ea42f77bc5c0e8cc6e9a1"},
+          {"operation", "upsert"},
+          {"evidence_source", "pom.properties"},
+          {"confidence", "high"},
+          {"component", {{"_inventory_id", "bc20a4ff0d0dc25a8c6ea42f77bc5c0e8cc6e9a1"},
+                         {"_inventory_index", "wazuh-states-inventory-runtime-java-components"},
+                         {"_document_version", 7},
+                         {"package_type", "jar"},
+                         {"group_id", "org.apache.logging.log4j"},
+                         {"artifact_id", "log4j-core"},
+                         {"version", "2.14.1"},
+                         {"version_", "2.14.1"},
+                         {"purl", "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"},
+                         {"runtime_path", "/opt/demo/demo-app.jar"},
+                         {"archive_path", ""},
+                         {"path_in_archive", "BOOT-INF/lib/log4j-core-2.14.1.jar"},
+                         {"sha1", "0123456789abcdef0123456789abcdef01234567"},
+                         {"sha256", "89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567"},
+                         {"pid", 1234},
+                         {"process_name", "java"},
+                         {"process_cmdline", "java -jar demo-app.jar"},
+                         {"process_start", 9302261},
+                         {"evidence_source", "pom.properties"},
+                         {"confidence", "high"},
+                         {"discovery_source", "classpath"},
+                         {"discovered_at", "2026-05-08T09:00:00.000Z"},
+                         {"is_direct_runtime_target", true},
+                         {"is_nested", true}}},
+          {"vulnerability", {{"id", "CVE-2021-44228"},
+                              {"severity", "critical"},
+                              {"title", "Apache Log4j Remote Code Execution"},
+                              {"description", "Test vulnerability document"},
+                              {"affected_range", "<2.15.0"},
+                              {"fixed_versions", "2.15.0"},
+                              {"references", nlohmann::json::array({"https://example.com/CVE-2021-44228"})},
+                              {"source", "ghsa"},
+                              {"operation", "upsert"},
+                              {"match_confidence", "high"},
+                              {"matched_at", "2026-05-08T09:00:00.000Z"}}}}}
+    };
+
+    auto result = validator->validate(message);
+    EXPECT_TRUE(result.isValid);
+    EXPECT_TRUE(result.errors.empty());
+}
+
+TEST_F(SchemaValidatorTest, RuntimeJavaResultValidatorRejectsStringProcessStart)
+{
+    SchemaValidatorFactory& factory = SchemaValidatorFactory::getInstance();
+    factory.reset();
+    factory.initialize();
+
+    auto validator = factory.getValidator("wazuh-states-vulnerabilities-runtime-java");
+    if (!validator)
+    {
+        GTEST_SKIP() << "Runtime Java vulnerability result schema validator not available";
+    }
+
+    nlohmann::json message = {
+        {"@timestamp", "2026-05-08T09:00:00.000Z"},
+        {"schema_version", "1.0"},
+        {"wazuh", {{"agent", {{"id", "001"},
+                                 {"name", "test-agent"},
+                                 {"version", "5.0.0"},
+                                 {"groups", nlohmann::json::array({"default"})},
+                                 {"host", {{"hostname", "demo-host"},
+                                            {"architecture", "x86_64"},
+                                            {"os", {{"name", "Ubuntu"},
+                                                     {"platform", "ubuntu"},
+                                                     {"type", "linux"},
+                                                     {"version", "22.04"}}}}}}},
+                    {"cluster", {{"name", "wazuh"}, {"node", "node01"}}},
+                    {"session", {{"id", "42"}, {"module", "syscollector"}, {"scan_mode", "delta"}}}}},
+        {"matcher", {{"source", "runtime-java-matcher"},
+                      {"url", "http://127.0.0.1:8080/runtime-java/match"},
+                      {"request_id", "42"},
+                      {"generated_at", "2026-05-08T09:00:00.000Z"}}},
+        {"runtime_java",
+         {{"inventory_id", "bc20a4ff0d0dc25a8c6ea42f77bc5c0e8cc6e9a1"},
+          {"operation", "upsert"},
+          {"evidence_source", "pom.properties"},
+          {"confidence", "high"},
+          {"component", {{"_inventory_id", "bc20a4ff0d0dc25a8c6ea42f77bc5c0e8cc6e9a1"},
+                         {"_inventory_index", "wazuh-states-inventory-runtime-java-components"},
+                         {"_document_version", 7},
+                         {"package_type", "jar"},
+                         {"group_id", "org.apache.logging.log4j"},
+                         {"artifact_id", "log4j-core"},
+                         {"version", "2.14.1"},
+                         {"version_", "2.14.1"},
+                         {"purl", "pkg:maven/org.apache.logging.log4j/log4j-core@2.14.1"},
+                         {"runtime_path", "/opt/demo/demo-app.jar"},
+                         {"archive_path", ""},
+                         {"path_in_archive", "BOOT-INF/lib/log4j-core-2.14.1.jar"},
+                         {"sha1", "0123456789abcdef0123456789abcdef01234567"},
+                         {"sha256", "89abcdef0123456789abcdef0123456789abcdef0123456789abcdef01234567"},
+                         {"pid", 1234},
+                         {"process_name", "java"},
+                         {"process_cmdline", "java -jar demo-app.jar"},
+                         {"process_start", "9302261"},
+                         {"evidence_source", "pom.properties"},
+                         {"confidence", "high"},
+                         {"discovery_source", "classpath"},
+                         {"discovered_at", "2026-05-08T09:00:00.000Z"},
+                         {"is_direct_runtime_target", true},
+                         {"is_nested", true}}},
+          {"vulnerability", {{"id", "CVE-2021-44228"},
+                              {"severity", "critical"},
+                              {"title", "Apache Log4j Remote Code Execution"},
+                              {"description", "Test vulnerability document"},
+                              {"affected_range", "<2.15.0"},
+                              {"fixed_versions", "2.15.0"},
+                              {"references", nlohmann::json::array({"https://example.com/CVE-2021-44228"})},
+                              {"source", "ghsa"},
+                              {"operation", "upsert"},
+                              {"match_confidence", "high"},
+                              {"matched_at", "2026-05-08T09:00:00.000Z"}}}}}
+    };
+
+    auto result = validator->validate(message);
+    EXPECT_FALSE(result.isValid);
+    EXPECT_FALSE(result.errors.empty());
+}
+
 // ============================================================================
 // Tests for new types: short, unsigned_long, scaled_float, match_only_text, object
 // ============================================================================

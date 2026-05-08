@@ -117,6 +117,17 @@ public:
     void deleteByQuery(const std::string& index, const std::string& agentId);
 
     /**
+     * @brief Delete agent documents restricted to a set of runtime-java inventory identifiers.
+     *
+     * @param index Index name.
+     * @param agentId Agent identifier.
+     * @param inventoryIds Runtime Java inventory identifiers to remove.
+     */
+    void deleteByQuery(const std::string& index,
+                       const std::string& agentId,
+                       const std::vector<std::string>& inventoryIds);
+
+    /**
      * @brief Execute an update by query operation on OpenSearch/Elasticsearch.
      *
      * This is a generic method that allows callers to execute arbitrary update_by_query

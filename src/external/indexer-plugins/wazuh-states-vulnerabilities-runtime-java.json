@@ -24,9 +24,21 @@
                 "id": { "type": "keyword" },
                 "name": { "type": "keyword" },
                 "version": { "type": "keyword" },
-                "hostname": { "type": "keyword" },
-                "architecture": { "type": "keyword" },
-                "groups": { "type": "keyword" }
+                "groups": { "type": "keyword" },
+                "host": {
+                  "properties": {
+                    "hostname": { "type": "keyword" },
+                    "architecture": { "type": "keyword" },
+                    "os": {
+                      "properties": {
+                        "name": { "type": "keyword" },
+                        "platform": { "type": "keyword" },
+                        "type": { "type": "keyword" },
+                        "version": { "type": "keyword" }
+                      }
+                    }
+                  }
+                }
               }
             },
             "cluster": {
@@ -77,7 +89,7 @@
                 "pid": { "type": "long" },
                 "process_name": { "type": "keyword" },
                 "process_cmdline": { "type": "wildcard" },
-                "process_start": { "type": "date" },
+                "process_start": { "type": "long" },
                 "evidence_source": { "type": "keyword" },
                 "confidence": { "type": "keyword" },
                 "discovery_source": { "type": "keyword" },

@@ -18,6 +18,7 @@
 #include "secureCommunication.hpp"
 #include "shared_modules/utils/certHelper.hpp"
 #include <atomic>
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
@@ -706,6 +707,48 @@ public:
     {
         auto [it, success] = m_deleteByQuery.try_emplace(index, nlohmann::json::object());
         it->second["query"]["bool"]["filter"]["terms"]["wazuh.agent.id"].push_back(agentId);
+    }
+
+    void deleteByQuery(const std::string& index,
+                       const std::string& agentId,
+                       const std::vector<std::string>& inventoryIds)
+    {
+        if (inventoryIds.empty())
+        {
+            deleteByQuery(index, agentId);
+            return;
+        }
+
+        auto [it, success] = m_deleteByQuery.try_emplace(index, nlohmann::json::object());
+        auto& query = it->second;
+
+        if (!query.contains("query") || !query["query"].is_object() || !query["query"].contains("bool") ||
+            !query["query"]["bool"].is_object() || !query["query"]["bool"].contains("filter") ||
+            !query["query"]["bool"]["filter"].is_array() || query["query"]["bool"]["filter"].size() != 2)
+        {
+            query = {{"query",
+                      {{"bool",
+                        {{"filter",
+                          nlohmann::json::array(
+                              {{{"terms", {{"wazuh.agent.id", nlohmann::json::array()}}}},
+                               {{"terms", {{"runtime_java.inventory_id", nlohmann::json::array()}}}})}}}}}}};
+        }
+
+        auto& agentTerms = query["query"]["bool"]["filter"][0]["terms"]["wazuh.agent.id"];
+        if (std::find(agentTerms.begin(), agentTerms.end(), agentId) == agentTerms.end())
+        {
+            agentTerms.push_back(agentId);
+        }
+
+        auto& inventoryTerms = query["query"]["bool"]["filter"][1]["terms"]["runtime_java.inventory_id"];
+        for (const auto& inventoryId : inventoryIds)
+        {
+            if (!inventoryId.empty() && std::find(inventoryTerms.begin(), inventoryTerms.end(), inventoryId) ==
+                                          inventoryTerms.end())
+            {
+                inventoryTerms.push_back(inventoryId);
+            }
+        }
     }
 
     void executeUpdateByQuery(const std::vector<std::string>& indices, const nlohmann::json& updateQuery)
