@@ -664,7 +664,6 @@ TEST_F(SchemaValidatorTest, RuntimeJavaResultValidatorAcceptsCurrentDocumentShap
     }
 
     nlohmann::json message = {
-        {"@timestamp", "2026-05-08T09:00:00.000Z"},
         {"schema_version", "1.0"},
         {"wazuh", {{"agent", {{"id", "001"},
                                  {"name", "test-agent"},
@@ -742,7 +741,6 @@ TEST_F(SchemaValidatorTest, RuntimeJavaResultValidatorRejectsStringProcessStart)
     }
 
     nlohmann::json message = {
-        {"@timestamp", "2026-05-08T09:00:00.000Z"},
         {"schema_version", "1.0"},
         {"wazuh", {{"agent", {{"id", "001"},
                                  {"name", "test-agent"},

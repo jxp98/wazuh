@@ -11,9 +11,6 @@
     },
     "mappings": {
       "properties": {
-        "@timestamp": {
-          "type": "date"
-        },
         "schema_version": {
           "type": "keyword"
         },
