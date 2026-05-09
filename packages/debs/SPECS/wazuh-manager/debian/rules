@@ -72,6 +72,13 @@ override_dh_install:
 	rm -rf $(INSTALLATION_DIR)/logs/*.log
 	rm -rf $(INSTALLATION_DIR)/logs/*.json
 
+	# Ship runtime-java index templates with the installed manager tree.
+	mkdir -p $(INSTALLATION_DIR)/etc/indexer-plugins
+	install -m 0640 src/external/indexer-plugins/wazuh-states-inventory-runtime-java-components.json \
+		$(INSTALLATION_DIR)/etc/indexer-plugins/
+	install -m 0640 src/external/indexer-plugins/wazuh-states-vulnerabilities-runtime-java.json \
+		$(INSTALLATION_DIR)/etc/indexer-plugins/
+
 	./gen_permissions.sh $(INSTALLATION_DIR)/ ${TARGET_DIR}$(INSTALLATION_SCRIPTS_DIR)/restore-permissions.sh
 
 	# Copying to target

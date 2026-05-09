@@ -90,6 +90,14 @@ mkdir -p ${RPM_BUILD_ROOT}/usr/lib/systemd/system/
 sed -i "s:WAZUH_HOME_TMP:%{_localstatedir}:g" src/init/templates/wazuh-manager.service
 install -m 0644 src/init/templates/wazuh-manager.service ${RPM_BUILD_ROOT}/usr/lib/systemd/system/
 
+# Ship runtime-java index templates with the installed manager tree.
+mkdir -p %{_localstatedir}/etc/indexer-plugins
+install -m 0640 src/external/indexer-plugins/wazuh-states-inventory-runtime-java-components.json %{_localstatedir}/etc/indexer-plugins/
+install -m 0640 src/external/indexer-plugins/wazuh-states-vulnerabilities-runtime-java.json %{_localstatedir}/etc/indexer-plugins/
+mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/etc/indexer-plugins
+install -m 0640 src/external/indexer-plugins/wazuh-states-inventory-runtime-java-components.json ${RPM_BUILD_ROOT}%{_localstatedir}/etc/indexer-plugins/
+install -m 0640 src/external/indexer-plugins/wazuh-states-vulnerabilities-runtime-java.json ${RPM_BUILD_ROOT}%{_localstatedir}/etc/indexer-plugins/
+
 # Add configuration scripts
 mkdir -p ${RPM_BUILD_ROOT}%{_localstatedir}/packages_files/manager_installation_scripts/
 
