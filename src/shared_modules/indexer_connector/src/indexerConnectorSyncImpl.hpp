@@ -915,6 +915,78 @@ public:
         return resultJson;
     }
 
+    void putIndexTemplate(const std::string& templateName, const nlohmann::json& templateDefinition)
+    {
+        const auto onSuccess = [](const std::string& response)
+        {
+            logDebug2(IC_NAME, "Index template response: %s", response.c_str());
+        };
+
+        const auto onError = [](const std::string& error, const long statusCode, const std::string&)
+        {
+            logError(IC_NAME, "Index template update failed: %s, status code: %ld", error.c_str(), statusCode);
+            throw IndexerConnectorException("Index template update failed: " + error);
+        };
+
+        auto serverUrl = m_selector->getNext();
+        std::string url;
+        url += serverUrl;
+        url += "/_index_template/";
+        url += templateName;
+
+        logDebug2(IC_NAME, "Updating index template on: %s", url.c_str());
+
+        m_httpRequest->put(RequestParameters {.url = HttpURL(url),
+                                              .data = templateDefinition.dump(),
+                                              .secureCommunication = m_secureCommunication},
+                           PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
+                           {});
+    }
+
+    bool putIndexMapping(const std::string& index,
+                         const nlohmann::json& mappingDefinition,
+                         bool ignoreMissingIndex = false)
+    {
+        bool updatedExistingIndex {true};
+
+        const auto onSuccess = [](const std::string& response)
+        {
+            logDebug2(IC_NAME, "Index mapping response: %s", response.c_str());
+        };
+
+        const auto onError = [&updatedExistingIndex, ignoreMissingIndex](const std::string& error,
+                                                                          const long statusCode,
+                                                                          const std::string&)
+        {
+            if (ignoreMissingIndex && statusCode == HTTP_NOT_FOUND)
+            {
+                updatedExistingIndex = false;
+                logDebug2(IC_NAME, "Index mapping update skipped because index does not exist yet.");
+                return;
+            }
+
+            logError(IC_NAME, "Index mapping update failed: %s, status code: %ld", error.c_str(), statusCode);
+            throw IndexerConnectorException("Index mapping update failed: " + error);
+        };
+
+        auto serverUrl = m_selector->getNext();
+        std::string url;
+        url += serverUrl;
+        url += "/";
+        url += index;
+        url += "/_mapping";
+
+        logDebug2(IC_NAME, "Updating index mapping on: %s", url.c_str());
+
+        m_httpRequest->put(RequestParameters {.url = HttpURL(url),
+                                              .data = mappingDefinition.dump(),
+                                              .secureCommunication = m_secureCommunication},
+                           PostRequestParameters {.onSuccess = onSuccess, .onError = onError},
+                           {});
+
+        return updatedExistingIndex;
+    }
+
     void executeSearchQueryWithPagination(const std::string& index,
                                           const nlohmann::json& query,
                                           std::function<void(const nlohmann::json&)> onResponse)

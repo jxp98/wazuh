@@ -3391,3 +3391,107 @@ TEST_F(IndexerConnectorSyncTest, RegisterNotifyCallbacksNotCalledOnError)
     // Callback should not be called on error
     EXPECT_EQ(callbackCount, 0);
 }
+
+TEST_F(IndexerConnectorSyncTest, PutIndexTemplateUsesExpectedUrlAndPayload)
+{
+    auto mockSelector = std::make_unique<NiceMock<MockServerSelector>>();
+    EXPECT_CALL(*mockSelector, getNext()).WillRepeatedly(Return("mockserver:9200"));
+
+    IndexerConnectorSyncImplTest connector(config, nullptr, &mockHttpRequest, std::move(mockSelector));
+
+    std::string requestData;
+    std::string requestUrl;
+
+    EXPECT_CALL(mockHttpRequest, put(_, _, _))
+        .WillOnce(Invoke(
+            [&requestData, &requestUrl](auto requestParams, const auto& postParams, auto /*configParams*/)
+            {
+                std::visit([&requestUrl](const auto& params) { requestUrl = params.url.url(); }, requestParams);
+                std::visit([&requestData](const auto& params) { requestData = params.data; }, requestParams);
+
+                if (std::holds_alternative<TPostRequestParameters<const std::string&>>(postParams))
+                {
+                    std::get<TPostRequestParameters<const std::string&>>(postParams)
+                        .onSuccess(R"({"acknowledged":true})");
+                }
+                else
+                {
+                    auto response = std::string {R"({"acknowledged":true})"};
+                    std::get<TPostRequestParameters<std::string&&>>(postParams).onSuccess(std::move(response));
+                }
+            }));
+
+    const auto templateName = std::string {"wazuh-states-vulnerabilities-runtime-java_template"};
+    nlohmann::json templateDefinition;
+    templateDefinition["index_patterns"] = nlohmann::json::array({"wazuh-states-vulnerabilities-runtime-java*"});
+    templateDefinition["priority"] = 200;
+
+    EXPECT_NO_THROW(connector.putIndexTemplate(templateName, templateDefinition));
+    EXPECT_EQ(requestUrl, "mockserver:9200/_index_template/" + templateName);
+    EXPECT_EQ(nlohmann::json::parse(requestData), templateDefinition);
+}
+
+TEST_F(IndexerConnectorSyncTest, PutIndexMappingUsesExpectedUrlAndPayload)
+{
+    auto mockSelector = std::make_unique<NiceMock<MockServerSelector>>();
+    EXPECT_CALL(*mockSelector, getNext()).WillRepeatedly(Return("mockserver:9200"));
+
+    IndexerConnectorSyncImplTest connector(config, nullptr, &mockHttpRequest, std::move(mockSelector));
+
+    std::string requestData;
+    std::string requestUrl;
+
+    EXPECT_CALL(mockHttpRequest, put(_, _, _))
+        .WillOnce(Invoke(
+            [&requestData, &requestUrl](auto requestParams, const auto& postParams, auto /*configParams*/)
+            {
+                std::visit([&requestUrl](const auto& params) { requestUrl = params.url.url(); }, requestParams);
+                std::visit([&requestData](const auto& params) { requestData = params.data; }, requestParams);
+
+                if (std::holds_alternative<TPostRequestParameters<const std::string&>>(postParams))
+                {
+                    std::get<TPostRequestParameters<const std::string&>>(postParams)
+                        .onSuccess(R"({"acknowledged":true})");
+                }
+                else
+                {
+                    auto response = std::string {R"({"acknowledged":true})"};
+                    std::get<TPostRequestParameters<std::string&&>>(postParams).onSuccess(std::move(response));
+                }
+            }));
+
+    const auto indexName = std::string {"wazuh-states-vulnerabilities-runtime-java"};
+    nlohmann::json mappingDefinition;
+    mappingDefinition["properties"]["matcher"]["properties"]["source"]["type"] = "keyword";
+
+    EXPECT_TRUE(connector.putIndexMapping(indexName, mappingDefinition));
+    EXPECT_EQ(requestUrl, "mockserver:9200/" + indexName + "/_mapping");
+    EXPECT_EQ(nlohmann::json::parse(requestData), mappingDefinition);
+}
+
+TEST_F(IndexerConnectorSyncTest, PutIndexMappingCanIgnoreMissingIndex)
+{
+    auto mockSelector = std::make_unique<NiceMock<MockServerSelector>>();
+    EXPECT_CALL(*mockSelector, getNext()).WillRepeatedly(Return("mockserver:9200"));
+
+    IndexerConnectorSyncImplTest connector(config, nullptr, &mockHttpRequest, std::move(mockSelector));
+
+    EXPECT_CALL(mockHttpRequest, put(_, _, _))
+        .WillOnce(Invoke(
+            [](auto /*requestParams*/, const auto& postParams, auto /*configParams*/)
+            {
+                if (std::holds_alternative<TPostRequestParameters<const std::string&>>(postParams))
+                {
+                    std::get<TPostRequestParameters<const std::string&>>(postParams).onError("Not Found", 404, "");
+                }
+                else
+                {
+                    std::get<TPostRequestParameters<std::string&&>>(postParams).onError("Not Found", 404, "");
+                }
+            }));
+
+    nlohmann::json mappingDefinition;
+    mappingDefinition["properties"]["matcher"]["properties"]["source"]["type"] = "keyword";
+
+    EXPECT_FALSE(connector.putIndexMapping("wazuh-states-vulnerabilities-runtime-java", mappingDefinition, true));
+}

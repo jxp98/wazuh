@@ -52,6 +52,18 @@ public:
         return m_impl.executeSearchQuery(index, searchQuery);
     }
 
+    void putIndexTemplate(const std::string& templateName, const nlohmann::json& templateDefinition)
+    {
+        m_impl.putIndexTemplate(templateName, templateDefinition);
+    }
+
+    bool putIndexMapping(const std::string& index,
+                         const nlohmann::json& mappingDefinition,
+                         bool ignoreMissingIndex = false)
+    {
+        return m_impl.putIndexMapping(index, mappingDefinition, ignoreMissingIndex);
+    }
+
     void executeSearchQueryWithPagination(const std::string& index,
                                           const nlohmann::json& query,
                                           std::function<void(const nlohmann::json&)> onResponse)
@@ -153,6 +165,19 @@ void IndexerConnectorSync::executeUpdateByQuery(const std::vector<std::string>& 
 nlohmann::json IndexerConnectorSync::executeSearchQuery(const std::string& index, const nlohmann::json& searchQuery)
 {
     return m_impl->executeSearchQuery(index, searchQuery);
+}
+
+void IndexerConnectorSync::putIndexTemplate(const std::string& templateName,
+                                            const nlohmann::json& templateDefinition)
+{
+    m_impl->putIndexTemplate(templateName, templateDefinition);
+}
+
+bool IndexerConnectorSync::putIndexMapping(const std::string& index,
+                                           const nlohmann::json& mappingDefinition,
+                                           bool ignoreMissingIndex)
+{
+    return m_impl->putIndexMapping(index, mappingDefinition, ignoreMissingIndex);
 }
 
 void IndexerConnectorSync::executeSearchQueryWithPagination(const std::string& index,

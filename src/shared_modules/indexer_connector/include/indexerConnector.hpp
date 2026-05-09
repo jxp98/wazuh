@@ -162,6 +162,26 @@ public:
     nlohmann::json executeSearchQuery(const std::string& index, const nlohmann::json& searchQuery);
 
     /**
+     * @brief Create or update an index template.
+     *
+     * @param templateName Index template name.
+     * @param templateDefinition Full index template JSON body.
+     */
+    void putIndexTemplate(const std::string& templateName, const nlohmann::json& templateDefinition);
+
+    /**
+     * @brief Update mappings for an existing index.
+     *
+     * @param index Index name.
+     * @param mappingDefinition Mapping JSON body.
+     * @param ignoreMissingIndex If true, a missing index returns false instead of throwing.
+     * @return true if the mapping request was applied, false if the index was missing and ignoreMissingIndex is true.
+     */
+    bool putIndexMapping(const std::string& index,
+                         const nlohmann::json& mappingDefinition,
+                         bool ignoreMissingIndex = false);
+
+    /**
      * @brief Execute a search query with automatic pagination.
      *
      * This method performs a search query and automatically handles pagination using
