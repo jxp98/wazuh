@@ -8,6 +8,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <initializer_list>
 #include <map>
 #include <regex>
 #include <set>
@@ -51,6 +52,11 @@ namespace
         std::string evidenceSource;
         std::string confidence;
         std::string packageType;
+        bool artifactFromManifest {false};
+        bool versionFromManifest {false};
+        bool groupFromManifest {false};
+        bool artifactFromFilename {false};
+        bool versionFromFilename {false};
     };
 
     bool isArchivePath(const std::string& path)
@@ -462,6 +468,154 @@ namespace
         return values;
     }
 
+    std::string sanitizeManifestValue(const std::string& value)
+    {
+        const auto trimmed = Utils::trim(value);
+        if (trimmed.empty() || trimmed.front() == '%')
+        {
+            return {};
+        }
+
+        return trimmed;
+    }
+
+    bool looksLikeCoordinateValue(const std::string& value)
+    {
+        const auto trimmed = sanitizeManifestValue(value);
+        if (trimmed.empty() || trimmed.find_first_of(" \t/\\:@") != std::string::npos)
+        {
+            return false;
+        }
+
+        return std::all_of(trimmed.begin(), trimmed.end(), [](unsigned char ch)
+        {
+            return std::isalnum(ch) != 0 || ch == '.' || ch == '_' || ch == '-';
+        });
+    }
+
+    std::string normalizeArtifactKey(const std::string& value)
+    {
+        std::string normalized;
+        normalized.reserve(value.size());
+        bool lastWasDash {false};
+
+        for (const auto rawCharacter : Utils::toLowerCase(Utils::trim(value)))
+        {
+            const auto character = static_cast<unsigned char>(rawCharacter);
+            if (std::isalnum(character) != 0)
+            {
+                normalized.push_back(static_cast<char>(character));
+                lastWasDash = false;
+            }
+            else if (character == '.' || character == '_' || character == '-')
+            {
+                if (!lastWasDash)
+                {
+                    normalized.push_back('-');
+                    lastWasDash = true;
+                }
+            }
+        }
+
+        while (!normalized.empty() && normalized.front() == '-')
+        {
+            normalized.erase(normalized.begin());
+        }
+        while (!normalized.empty() && normalized.back() == '-')
+        {
+            normalized.pop_back();
+        }
+
+        return normalized;
+    }
+
+    bool sameArtifactIdentity(const std::string& left, const std::string& right)
+    {
+        const auto leftKey = normalizeArtifactKey(left);
+        const auto rightKey = normalizeArtifactKey(right);
+        return !leftKey.empty() && leftKey == rightKey;
+    }
+
+    std::string firstCoordinateLike(std::initializer_list<std::string> values)
+    {
+        for (const auto& value : values)
+        {
+            if (looksLikeCoordinateValue(value))
+            {
+                return sanitizeManifestValue(value);
+            }
+        }
+
+        return {};
+    }
+
+    std::string firstSanitizedNonEmpty(std::initializer_list<std::string> values)
+    {
+        for (const auto& value : values)
+        {
+            const auto sanitized = sanitizeManifestValue(value);
+            if (!sanitized.empty())
+            {
+                return sanitized;
+            }
+        }
+
+        return {};
+    }
+
+    std::string extractGroupFromBundleSymbolicName(const std::string& value)
+    {
+        auto symbolicName = sanitizeManifestValue(value);
+        if (symbolicName.empty())
+        {
+            return {};
+        }
+
+        const auto directiveSeparator = symbolicName.find(';');
+        if (directiveSeparator != std::string::npos)
+        {
+            symbolicName = symbolicName.substr(0, directiveSeparator);
+        }
+
+        const auto lastDot = symbolicName.rfind('.');
+        if (lastDot == std::string::npos)
+        {
+            return {};
+        }
+
+        return symbolicName.substr(0, lastDot);
+    }
+
+    std::string chooseManifestArtifact(const std::map<std::string, std::string>& manifest,
+                                       const std::string& componentPathHint)
+    {
+        const auto findValue = [&manifest](const std::string& key)
+        {
+            if (const auto it = manifest.find(key); it != manifest.end())
+            {
+                return it->second;
+            }
+
+            return std::string {};
+        };
+
+        const auto manifestArtifact = firstCoordinateLike({findValue("Implementation-Title"),
+                                                           findValue("Bundle-Name"),
+                                                           findValue("Specification-Title")});
+        if (manifestArtifact.empty())
+        {
+            return {};
+        }
+
+        const auto [filenameArtifact, _] = RuntimeJavaInventory::Discoverer::inferArtifactAndVersion(componentPathHint);
+        if (filenameArtifact.empty())
+        {
+            return manifestArtifact;
+        }
+
+        return sameArtifactIdentity(manifestArtifact, filenameArtifact) ? filenameArtifact : std::string {};
+    }
+
     std::string buildMavenPurl(const std::string& groupId,
                                const std::string& artifactId,
                                const std::string& version)
@@ -547,81 +701,67 @@ namespace
                                                   : parseManifest(readArchiveEntry(archivePath, MANIFEST_ENTRY_PATH));
         if (!manifest.empty())
         {
-            if (metadata.artifactId.empty())
+            const auto findValue = [&manifest](const std::string& key)
             {
-                if (auto it = manifest.find("Implementation-Title"); it != manifest.end())
+                if (const auto it = manifest.find(key); it != manifest.end())
                 {
-                    metadata.artifactId = it->second;
+                    return it->second;
                 }
-                else if (auto it = manifest.find("Bundle-Name"); it != manifest.end())
-                {
-                    metadata.artifactId = it->second;
-                }
-                else if (auto it = manifest.find("Bundle-SymbolicName"); it != manifest.end())
-                {
-                    auto symbolicName = it->second;
-                    const auto directiveSeparator = symbolicName.find(';');
-                    if (directiveSeparator != std::string::npos)
-                    {
-                        symbolicName = symbolicName.substr(0, directiveSeparator);
-                    }
 
-                    const auto lastDot = symbolicName.rfind('.');
-                    metadata.artifactId = lastDot == std::string::npos ? symbolicName : symbolicName.substr(lastDot + 1);
+                return std::string {};
+            };
 
-                    if (metadata.groupId.empty() && lastDot != std::string::npos)
-                    {
-                        metadata.groupId = symbolicName.substr(0, lastDot);
-                    }
-                }
+            const auto manifestArtifact = chooseManifestArtifact(manifest, componentPathHint);
+            const auto manifestVersion = firstSanitizedNonEmpty({findValue("Implementation-Version"),
+                                                               findValue("Bundle-Version"),
+                                                               findValue("Specification-Version")});
+            const auto manifestGroup = firstCoordinateLike({findValue("Implementation-Vendor-Id"),
+                                                            extractGroupFromBundleSymbolicName(findValue("Bundle-SymbolicName"))});
+
+            if (metadata.artifactId.empty() && !manifestArtifact.empty())
+            {
+                metadata.artifactId = manifestArtifact;
+                metadata.artifactFromManifest = true;
             }
-
-            if (metadata.version.empty())
+            if (metadata.version.empty() && !manifestVersion.empty())
             {
-                if (auto it = manifest.find("Implementation-Version"); it != manifest.end())
-                {
-                    metadata.version = it->second;
-                }
-                else if (auto it = manifest.find("Bundle-Version"); it != manifest.end())
-                {
-                    metadata.version = it->second;
-                }
-                else if (auto it = manifest.find("Specification-Version"); it != manifest.end())
-                {
-                    metadata.version = it->second;
-                }
+                metadata.version = manifestVersion;
+                metadata.versionFromManifest = true;
             }
-
-            if (metadata.groupId.empty())
+            if (metadata.groupId.empty() && !manifestGroup.empty())
             {
-                if (auto it = manifest.find("Implementation-Vendor-Id"); it != manifest.end())
-                {
-                    metadata.groupId = it->second;
-                }
-            }
-
-            if (metadata.evidenceSource.empty() && (!metadata.artifactId.empty() || !metadata.version.empty()))
-            {
-                metadata.evidenceSource = "manifest";
-                metadata.confidence = "medium";
+                metadata.groupId = manifestGroup;
+                metadata.groupFromManifest = true;
             }
         }
 
         const auto [artifactIdFromName, versionFromName] =
             RuntimeJavaInventory::Discoverer::inferArtifactAndVersion(componentPathHint);
 
-        if (metadata.artifactId.empty())
+        if (metadata.artifactId.empty() && !artifactIdFromName.empty())
         {
             metadata.artifactId = artifactIdFromName;
+            metadata.artifactFromFilename = true;
         }
-        if (metadata.version.empty())
+        if (metadata.version.empty() && !versionFromName.empty())
         {
             metadata.version = versionFromName;
+            metadata.versionFromFilename = true;
         }
         if (metadata.evidenceSource.empty())
         {
-            metadata.evidenceSource = "filename";
-            metadata.confidence = "low";
+            if (metadata.artifactFromManifest || metadata.versionFromManifest || metadata.groupFromManifest)
+            {
+                metadata.evidenceSource = (metadata.artifactFromFilename || metadata.versionFromFilename)
+                                              ? "manifest+filename"
+                                              : "manifest";
+                metadata.confidence = "medium";
+            }
+            else
+            {
+                metadata.evidenceSource = "filename";
+                metadata.confidence = "low";
+            }
         }
 
         metadata.purl = buildMavenPurl(metadata.groupId, metadata.artifactId, metadata.version);
