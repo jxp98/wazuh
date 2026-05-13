@@ -202,6 +202,7 @@ class EXPORTED Syscollector final
         void scanServices();
         void scanBrowserExtensions();
         void scanRuntimeJavaComponents();
+        bool runOnDemandRuntimeJavaScan(std::string& errorMessage);
         void scan();
         void syncLoop(std::unique_lock<std::mutex>& scan_lock);
         bool pause();

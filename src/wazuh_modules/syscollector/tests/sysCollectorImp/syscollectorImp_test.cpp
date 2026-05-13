@@ -2792,6 +2792,121 @@ TEST_F(SyscollectorImpTest, queryCommandFlushNoSyncProtocol)
     Syscollector::instance().destroy();
 }
 
+TEST_F(SyscollectorImpTest, queryCommandScanRuntimeJavaDisabled)
+{
+    const auto spInfoWrapper{std::make_shared<MockSysInfo>()};
+    EXPECT_CALL(*spInfoWrapper, hardware()).Times(0);
+    EXPECT_CALL(*spInfoWrapper, os()).Times(0);
+
+    Syscollector::instance().init(spInfoWrapper,
+                                  reportFunction,
+                                  persistFunction,
+                                  logFunction,
+                                  SYSCOLLECTOR_DB_PATH,
+                                  "",
+                                  "",
+                                  3600, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+
+    const auto responseJson = nlohmann::json::parse(Syscollector::instance().query(R"({"command":"scan_runtime_java"})"));
+
+    EXPECT_EQ(responseJson["error"], MQ_ERR_INTERNAL);
+    EXPECT_EQ(responseJson["data"]["module"], "syscollector");
+    EXPECT_EQ(responseJson["data"]["collector"], "runtime_java");
+    EXPECT_EQ(responseJson["data"]["action"], "scan_runtime_java");
+    EXPECT_EQ(responseJson["data"]["scan"], "error");
+    EXPECT_EQ(responseJson["data"]["flush"], "not_requested");
+
+    Syscollector::instance().destroy();
+}
+
+TEST_F(SyscollectorImpTest, queryCommandScanRuntimeJavaPaused)
+{
+    const auto spInfoWrapper{std::make_shared<MockSysInfo>()};
+    EXPECT_CALL(*spInfoWrapper, hardware()).Times(0);
+    EXPECT_CALL(*spInfoWrapper, os()).Times(0);
+
+    Syscollector::instance().init(spInfoWrapper,
+                                  reportFunction,
+                                  persistFunction,
+                                  logFunction,
+                                  SYSCOLLECTOR_DB_PATH,
+                                  "",
+                                  "",
+                                  3600, false, false, false, false, false, false, false, false, false, false, false, false, false, true);
+
+    const auto pauseResponse = nlohmann::json::parse(Syscollector::instance().query(R"({"command":"pause"})"));
+    EXPECT_EQ(pauseResponse["error"], MQ_SUCCESS);
+
+    const auto responseJson = nlohmann::json::parse(Syscollector::instance().query(R"({"command":"scan_runtime_java"})"));
+
+    EXPECT_EQ(responseJson["error"], MQ_ERR_INTERNAL);
+    EXPECT_EQ(responseJson["data"]["module"], "syscollector");
+    EXPECT_EQ(responseJson["data"]["collector"], "runtime_java");
+    EXPECT_EQ(responseJson["data"]["action"], "scan_runtime_java");
+    EXPECT_EQ(responseJson["data"]["scan"], "error");
+    EXPECT_EQ(responseJson["data"]["flush"], "not_requested");
+
+    Syscollector::instance().destroy();
+}
+
+TEST_F(SyscollectorImpTest, queryCommandFlushRuntimeJavaNoSyncProtocol)
+{
+    const auto spInfoWrapper{std::make_shared<MockSysInfo>()};
+    EXPECT_CALL(*spInfoWrapper, hardware()).Times(0);
+    EXPECT_CALL(*spInfoWrapper, os()).Times(0);
+
+    Syscollector::instance().init(spInfoWrapper,
+                                  reportFunction,
+                                  persistFunction,
+                                  logFunction,
+                                  SYSCOLLECTOR_DB_PATH,
+                                  "",
+                                  "",
+                                  3600, false, false, false, false, false, false, false, false, false, false, false, false, false, true);
+
+    const auto responseJson = nlohmann::json::parse(Syscollector::instance().query(R"({"command":"flush_runtime_java"})"));
+
+    EXPECT_EQ(responseJson["error"], MQ_SUCCESS);
+    EXPECT_EQ(responseJson["data"]["module"], "syscollector");
+    EXPECT_EQ(responseJson["data"]["collector"], "runtime_java");
+    EXPECT_EQ(responseJson["data"]["action"], "flush_runtime_java");
+    EXPECT_EQ(responseJson["data"]["scan"], "not_requested");
+    EXPECT_EQ(responseJson["data"]["flush"], "requested");
+    EXPECT_EQ(responseJson["data"]["flush_scope"], "pending_messages");
+    EXPECT_EQ(responseJson["data"]["sync_mode"], "delta");
+
+    Syscollector::instance().destroy();
+}
+
+TEST_F(SyscollectorImpTest, queryCommandScanRuntimeJavaAndFlushDisabled)
+{
+    const auto spInfoWrapper{std::make_shared<MockSysInfo>()};
+    EXPECT_CALL(*spInfoWrapper, hardware()).Times(0);
+    EXPECT_CALL(*spInfoWrapper, os()).Times(0);
+
+    Syscollector::instance().init(spInfoWrapper,
+                                  reportFunction,
+                                  persistFunction,
+                                  logFunction,
+                                  SYSCOLLECTOR_DB_PATH,
+                                  "",
+                                  "",
+                                  3600, false, false, false, false, false, false, false, false, false, false, false, false, false, false);
+
+    const auto responseJson = nlohmann::json::parse(Syscollector::instance().query(R"({"command":"scan_runtime_java_and_flush"})"));
+
+    EXPECT_EQ(responseJson["error"], MQ_ERR_INTERNAL);
+    EXPECT_EQ(responseJson["data"]["module"], "syscollector");
+    EXPECT_EQ(responseJson["data"]["collector"], "runtime_java");
+    EXPECT_EQ(responseJson["data"]["action"], "scan_runtime_java_and_flush");
+    EXPECT_EQ(responseJson["data"]["scan"], "error");
+    EXPECT_EQ(responseJson["data"]["flush"], "not_requested");
+    EXPECT_EQ(responseJson["data"]["flush_scope"], "pending_messages");
+    EXPECT_EQ(responseJson["data"]["sync_mode"], "delta");
+
+    Syscollector::instance().destroy();
+}
+
 TEST_F(SyscollectorImpTest, queryCommandFlushReportsInProgressAndThenSuccess)
 {
     static std::atomic<bool> s_blockStart {false};

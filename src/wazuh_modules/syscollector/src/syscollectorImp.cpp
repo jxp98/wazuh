@@ -1902,6 +1902,97 @@ void Syscollector::scanRuntimeJavaComponents()
     }
 }
 
+bool Syscollector::runOnDemandRuntimeJavaScan(std::string& errorMessage)
+{
+    if (!m_runtimeJavaInventory)
+    {
+        errorMessage = "Runtime Java inventory collector is disabled";
+        return false;
+    }
+
+    if (m_stopping.load())
+    {
+        errorMessage = "Syscollector is stopping";
+        return false;
+    }
+
+    if (m_paused.load())
+    {
+        errorMessage = "Syscollector module is paused";
+        return false;
+    }
+
+    std::unique_lock<std::mutex> scanLock {m_scan_mutex};
+
+    if (m_stopping.load())
+    {
+        errorMessage = "Syscollector is stopping";
+        return false;
+    }
+
+    if (m_paused.load())
+    {
+        errorMessage = "Syscollector module is paused";
+        return false;
+    }
+
+    ScanGuard scanGuard(m_scanning, m_pauseCv);
+
+    std::vector<std::pair<std::string, nlohmann::json>> failedItems;
+    std::vector<std::pair<std::string, nlohmann::json>> itemsToUpdateSync;
+    m_failedItems = &failedItems;
+    m_itemsToUpdateSync = &itemsToUpdateSync;
+
+    bool success = false;
+
+    try
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_INFO, "Starting on-demand runtime Java evaluation.");
+        }
+
+        scanRuntimeJavaComponents();
+        updateSyncFlagInDB(itemsToUpdateSync, 1);
+        promoteItemsAfterScan();
+        success = true;
+
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_INFO, "On-demand runtime Java evaluation finished.");
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        errorMessage = "On-demand runtime Java evaluation failed: " + std::string(ex.what());
+
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, errorMessage);
+        }
+    }
+    catch (...)
+    {
+        errorMessage = "On-demand runtime Java evaluation failed with unknown error";
+
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, errorMessage);
+        }
+    }
+
+    m_failedItems = nullptr;
+    m_itemsToUpdateSync = nullptr;
+    deleteFailedItemsFromDB(failedItems);
+
+    if (!success && errorMessage.empty())
+    {
+        errorMessage = "On-demand runtime Java evaluation failed";
+    }
+
+    return success;
+}
+
 void Syscollector::scan()
 {
     if (m_stopping.load())
@@ -3187,6 +3278,13 @@ std::string Syscollector::query(const std::string& jsonQuery)
         }
 
         nlohmann::json response;
+        const auto fillRuntimeJavaResponse = [&response](const std::string& action)
+        {
+            response["data"]["module"] = "syscollector";
+            response["data"]["collector"] = "runtime_java";
+            response["data"]["action"] = action;
+            response["data"]["sync_mode"] = "delta";
+        };
 
         // Handle coordination commands with JSON responses
         if (command == "pause")
@@ -3335,6 +3433,80 @@ std::string Syscollector::query(const std::string& jsonQuery)
             response["message"] = "Syscollector module resumed successfully";
             response["data"]["module"] = "syscollector";
             response["data"]["action"] = "resume";
+        }
+        else if (command == "scan_runtime_java")
+        {
+            std::string errorMessage;
+            fillRuntimeJavaResponse(command);
+
+            if (runOnDemandRuntimeJavaScan(errorMessage))
+            {
+                response["error"] = MQ_SUCCESS;
+                response["message"] = "Runtime Java inventory scan completed successfully";
+                response["data"]["scan"] = "completed";
+                response["data"]["flush"] = "not_requested";
+            }
+            else
+            {
+                response["error"] = MQ_ERR_INTERNAL;
+                response["message"] = errorMessage;
+                response["data"]["scan"] = "error";
+                response["data"]["flush"] = "not_requested";
+            }
+        }
+        else if (command == "flush_runtime_java")
+        {
+            const int flushResult = flush();
+            fillRuntimeJavaResponse(command);
+            response["data"]["flush_scope"] = "pending_messages";
+
+            if (flushResult == 0)
+            {
+                response["error"] = MQ_SUCCESS;
+                response["message"] = "Syscollector flush requested; pending runtime Java changes will be included";
+                response["data"]["scan"] = "not_requested";
+                response["data"]["flush"] = "requested";
+            }
+            else
+            {
+                response["error"] = MQ_ERR_INTERNAL;
+                response["message"] = "Syscollector flush failed for pending runtime Java changes";
+                response["data"]["scan"] = "not_requested";
+                response["data"]["flush"] = "error";
+            }
+        }
+        else if (command == "scan_runtime_java_and_flush")
+        {
+            std::string errorMessage;
+            fillRuntimeJavaResponse(command);
+            response["data"]["flush_scope"] = "pending_messages";
+
+            if (!runOnDemandRuntimeJavaScan(errorMessage))
+            {
+                response["error"] = MQ_ERR_INTERNAL;
+                response["message"] = errorMessage;
+                response["data"]["scan"] = "error";
+                response["data"]["flush"] = "not_requested";
+            }
+            else
+            {
+                const int flushResult = flush();
+
+                if (flushResult == 0)
+                {
+                    response["error"] = MQ_SUCCESS;
+                    response["message"] = "Runtime Java inventory scan completed and flush requested";
+                    response["data"]["scan"] = "completed";
+                    response["data"]["flush"] = "requested";
+                }
+                else
+                {
+                    response["error"] = MQ_ERR_INTERNAL;
+                    response["message"] = "Runtime Java inventory scan completed but flush failed";
+                    response["data"]["scan"] = "completed";
+                    response["data"]["flush"] = "error";
+                }
+            }
         }
         else
         {
