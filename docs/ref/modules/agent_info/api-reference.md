@@ -75,6 +75,20 @@ bool agent_info_parse_response(const uint8_t* data, size_t data_len);
 
 ---
 
+#### `agent_info_query()`
+处理发给 `agent_info` 模块自身的 JSON 查询命令。
+
+```c
+size_t agent_info_query(const char* json_query, char** output);
+```
+
+**说明：**
+这是 agent 侧协调控制面的本地入口。当前与 runtime-java 相关的命令包括：
+- `rescan_runtime_java`
+- `get_runtime_java_rescan_status`
+
+---
+
 ## C++ Implementation (`AgentInfoImpl`)
 
 The core logic is encapsulated within the `AgentInfoImpl` class.

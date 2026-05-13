@@ -45,6 +45,9 @@ agent_info_init_sync_protocol(const char* module_name, const MQ_Functions* mq_fu
 
 EXPORTED bool agent_info_parse_response(const uint8_t* data, size_t data_len);
 
+// 处理发给 agent_info 模块自身的 JSON 查询命令。
+EXPORTED size_t agent_info_query(const char* json_query, char** output);
+
 EXPORTED void agent_info_set_query_module_function(query_module_callback_t query_module_callback);
 
 /**
@@ -122,6 +125,7 @@ typedef void (*agent_info_set_report_function_func)(report_callback_t report_cal
 typedef void (*agent_info_init_sync_protocol_func)(const char* module_name,
                                                    const MQ_Functions* mq_funcs);
 typedef bool (*agent_info_parse_response_func)(const uint8_t* data, size_t data_len);
+typedef size_t (*agent_info_query_func)(const char* json_query, char** output);
 typedef void (*agent_info_set_query_module_function_func)(query_module_callback_t query_module_callback);
 typedef void (*agent_info_set_cluster_name_func)(const char* cluster_name);
 typedef const char* (*agent_info_get_cluster_name_func)(void);

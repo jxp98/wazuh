@@ -3,6 +3,7 @@
 #include "agent_info_impl.hpp"
 #include "wm_agent_info.h"
 #include "wmodules.h"
+#include "module_query_errors.h"
 
 #include <dbsync.hpp>
 
@@ -331,6 +332,40 @@ bool agent_info_parse_response(const uint8_t* data, size_t data_len)
     }
 
     return false;
+}
+
+size_t agent_info_query(const char* json_query, char** output)
+{
+    if (!json_query || !output)
+    {
+        return 0;
+    }
+
+    try
+    {
+        std::string result;
+
+        if (g_agent_info_impl)
+        {
+            result = g_agent_info_impl->query(std::string(json_query));
+        }
+        else
+        {
+            nlohmann::json response;
+            response["error"] = MQ_ERR_MODULE_NOT_RUNNING;
+            response["message"] = MQ_MSG_MODULE_NOT_RUNNING;
+            result = response.dump();
+        }
+
+        *output = strdup(result.c_str());
+        return strlen(*output);
+    }
+    catch (const std::exception& ex)
+    {
+        std::string error = "{\"error\":" + std::to_string(MQ_ERR_EXCEPTION) + ",\"message\":\"Exception in query handler: " + std::string(ex.what()) + "\"}";
+        *output = strdup(error.c_str());
+        return strlen(*output);
+    }
 }
 
 #ifdef __cplusplus

@@ -95,6 +95,11 @@ class AgentInfoImpl
         /// @return ECS-formatted data
         nlohmann::json ecsData(const nlohmann::json& data, const std::string& table) const;
 
+        /// @brief 处理 agent_info 模块自身的查询命令
+        /// @param jsonQuery JSON 查询命令字符串
+        /// @return JSON 响应字符串
+        std::string query(const std::string& jsonQuery);
+
     private:
         /// @brief Determine if a stateless event should be generated based on changed fields
         /// @param result Type of change (INSERTED, MODIFIED, DELETED)
@@ -190,6 +195,14 @@ class AgentInfoImpl
         /// @param jsonMessage JSON message to send
         /// @return Module response with parsed information
         ModuleResponse queryModuleWithRetry(const std::string& moduleName, const std::string& jsonMessage);
+
+        /// @brief 通过 syscollector 触发一次同步的 runtime-java 复扫
+        /// @return 返回给查询调用方的 JSON 响应体
+        nlohmann::json runRuntimeJavaRescan();
+
+        /// @brief 构造当前 runtime-java 复扫状态的 JSON 快照
+        /// @return 当前状态快照
+        nlohmann::json buildRuntimeJavaRescanStatusJson() const;
 
         /// @brief Helper to resume all paused modules
         /// @param pausedModules Set of paused module names to resume
@@ -296,6 +309,12 @@ class AgentInfoImpl
 
         /// @brief Mutex for synchronizing access to m_dBSync (prevents race conditions during cleanup/transactions)
         std::mutex m_dbSyncMutex;
+
+        /// @brief 用于保护 runtime-java 复扫状态访问的互斥锁
+        mutable std::mutex m_runtimeJavaRescanMutex;
+
+        /// @brief 通过查询接口暴露的最近一次 runtime-java 复扫状态
+        nlohmann::json m_runtimeJavaRescanState = nlohmann::json::object();
 
         /// @brief Flag set during updateChanges callback when cluster_name changed
         bool m_clusterNameChanged = false;

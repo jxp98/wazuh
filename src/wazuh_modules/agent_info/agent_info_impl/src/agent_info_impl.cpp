@@ -146,6 +146,16 @@ AgentInfoImpl::AgentInfoImpl(std::string dbPath,
         throw std::invalid_argument("Query module function must be provided");
     }
 
+    m_runtimeJavaRescanState["status"] = "never_run";
+    m_runtimeJavaRescanState["result"] = "never_run";
+    m_runtimeJavaRescanState["collector"] = "runtime_java";
+    m_runtimeJavaRescanState["target_module"] = SYSCOLLECTOR_WM_NAME;
+    m_runtimeJavaRescanState["target_command"] = "scan_runtime_java_and_flush";
+    m_runtimeJavaRescanState["request_id"] = nullptr;
+    m_runtimeJavaRescanState["started_at"] = nullptr;
+    m_runtimeJavaRescanState["finished_at"] = nullptr;
+    m_runtimeJavaRescanState["last_error"] = nullptr;
+
     m_logFunction(LOG_INFO, "AgentInfo initialized.");
 }
 
@@ -977,6 +987,232 @@ nlohmann::json AgentInfoImpl::ecsData(const nlohmann::json& data, const std::str
     }
 
     return ecsFormatted;
+}
+
+std::string AgentInfoImpl::query(const std::string& jsonQuery)
+{
+    m_logFunction(LOG_DEBUG, "Received agent-info query: " + jsonQuery);
+
+    try
+    {
+        const auto queryJson = nlohmann::json::parse(jsonQuery);
+
+        if (!queryJson.contains("command") || !queryJson["command"].is_string())
+        {
+            nlohmann::json response;
+            response["error"] = MQ_ERR_INVALID_PARAMS;
+            response["message"] = MQ_MSG_INVALID_PARAMS;
+            return response.dump();
+        }
+
+        const auto command = queryJson["command"].get<std::string>();
+        nlohmann::json response;
+        response["data"]["module"] = AGENT_INFO_WM_NAME;
+
+        if (command == "rescan_runtime_java")
+        {
+            return runRuntimeJavaRescan().dump();
+        }
+        else if (command == "get_runtime_java_rescan_status")
+        {
+            response["error"] = MQ_SUCCESS;
+            response["message"] = "Runtime Java rescan status retrieved";
+            response["data"]["action"] = command;
+            response["data"]["collector"] = "runtime_java";
+            response["data"]["rescan"] = buildRuntimeJavaRescanStatusJson();
+            return response.dump();
+        }
+
+        response["error"] = MQ_ERR_UNKNOWN_COMMAND;
+        response["message"] = "Unknown agent_info command: " + command;
+        response["data"]["command"] = command;
+        return response.dump();
+    }
+    catch (const std::exception& ex)
+    {
+        nlohmann::json response;
+        response["error"] = MQ_ERR_INTERNAL;
+        response["message"] = "Exception parsing JSON or executing command: " + std::string(ex.what());
+        return response.dump();
+    }
+}
+
+nlohmann::json AgentInfoImpl::buildRuntimeJavaRescanStatusJson() const
+{
+    std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+    auto status = m_runtimeJavaRescanState.empty() ? nlohmann::json::object() : m_runtimeJavaRescanState;
+
+    if (!status.contains("status"))
+    {
+        status["status"] = "never_run";
+    }
+
+    if (!status.contains("result"))
+    {
+        status["result"] = "never_run";
+    }
+
+    if (!status.contains("collector"))
+    {
+        status["collector"] = "runtime_java";
+    }
+
+    if (!status.contains("target_module"))
+    {
+        status["target_module"] = SYSCOLLECTOR_WM_NAME;
+    }
+
+    if (!status.contains("target_command"))
+    {
+        status["target_command"] = "scan_runtime_java_and_flush";
+    }
+
+    if (!status.contains("request_id"))
+    {
+        status["request_id"] = nullptr;
+    }
+
+    if (!status.contains("started_at"))
+    {
+        status["started_at"] = nullptr;
+    }
+
+    if (!status.contains("finished_at"))
+    {
+        status["finished_at"] = nullptr;
+    }
+
+    if (!status.contains("last_error"))
+    {
+        status["last_error"] = nullptr;
+    }
+
+    return status;
+}
+
+nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
+{
+    nlohmann::json response;
+    response["data"]["module"] = AGENT_INFO_WM_NAME;
+    response["data"]["action"] = "rescan_runtime_java";
+    response["data"]["collector"] = "runtime_java";
+    response["data"]["target_module"] = SYSCOLLECTOR_WM_NAME;
+    response["data"]["target_command"] = "scan_runtime_java_and_flush";
+
+    const auto requestId = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                                             std::chrono::system_clock::now().time_since_epoch())
+                                             .count());
+    const auto startedAt = Utils::getCurrentISO8601();
+
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+        m_runtimeJavaRescanState = {
+            {"status", "running"},
+            {"result", "running"},
+            {"collector", "runtime_java"},
+            {"target_module", SYSCOLLECTOR_WM_NAME},
+            {"target_command", "scan_runtime_java_and_flush"},
+            {"request_id", requestId},
+            {"started_at", startedAt},
+            {"finished_at", nullptr},
+            {"last_error", nullptr}
+        };
+    }
+
+    response["data"]["request_id"] = requestId;
+    response["data"]["started_at"] = startedAt;
+
+    if (!m_queryModuleFunction)
+    {
+        const auto finishedAt = Utils::getCurrentISO8601();
+        const std::string errorMessage = "Module query function not available";
+
+        {
+            std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+            m_runtimeJavaRescanState["status"] = "error";
+            m_runtimeJavaRescanState["result"] = "error";
+            m_runtimeJavaRescanState["finished_at"] = finishedAt;
+            m_runtimeJavaRescanState["last_error"] = errorMessage;
+        }
+
+        response["error"] = MQ_ERR_INTERNAL;
+        response["message"] = errorMessage;
+        response["data"]["status"] = "error";
+        response["data"]["result"] = "error";
+        response["data"]["finished_at"] = finishedAt;
+        return response;
+    }
+
+    const auto scanResponse = queryModuleWithRetry(SYSCOLLECTOR_WM_NAME, createJsonCommand("scan_runtime_java_and_flush"));
+
+    try
+    {
+        response["data"]["target_response"] = nlohmann::json::parse(scanResponse.response);
+    }
+    catch (const std::exception&)
+    {
+        response["data"]["target_response_raw"] = scanResponse.response;
+    }
+
+    if (!scanResponse.success)
+    {
+        const auto finishedAt = Utils::getCurrentISO8601();
+
+        {
+            std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+            m_runtimeJavaRescanState["status"] = "error";
+            m_runtimeJavaRescanState["result"] = "error";
+            m_runtimeJavaRescanState["finished_at"] = finishedAt;
+            m_runtimeJavaRescanState["last_error"] = scanResponse.response;
+        }
+
+        response["error"] = MQ_ERR_INTERNAL;
+        response["message"] = "Failed to trigger runtime Java rescan through syscollector";
+        response["data"]["status"] = "error";
+        response["data"]["result"] = "error";
+        response["data"]["finished_at"] = finishedAt;
+        response["data"]["last_error"] = scanResponse.response;
+        return response;
+    }
+
+    if (!pollFlushCompletion({SYSCOLLECTOR_WM_NAME}))
+    {
+        const auto finishedAt = Utils::getCurrentISO8601();
+        const std::string errorMessage = "Runtime Java rescan flush did not complete successfully";
+
+        {
+            std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+            m_runtimeJavaRescanState["status"] = "error";
+            m_runtimeJavaRescanState["result"] = "error";
+            m_runtimeJavaRescanState["finished_at"] = finishedAt;
+            m_runtimeJavaRescanState["last_error"] = errorMessage;
+        }
+
+        response["error"] = MQ_ERR_INTERNAL;
+        response["message"] = errorMessage;
+        response["data"]["status"] = "error";
+        response["data"]["result"] = "error";
+        response["data"]["finished_at"] = finishedAt;
+        response["data"]["last_error"] = errorMessage;
+        return response;
+    }
+
+    const auto finishedAt = Utils::getCurrentISO8601();
+
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+        m_runtimeJavaRescanState["status"] = "completed";
+        m_runtimeJavaRescanState["result"] = "success";
+        m_runtimeJavaRescanState["finished_at"] = finishedAt;
+        m_runtimeJavaRescanState["last_error"] = nullptr;
+    }
+
+    response["error"] = MQ_SUCCESS;
+    response["message"] = "Runtime Java rescan completed successfully";
+    response["data"]["status"] = "completed";
+    response["data"]["result"] = "success";
+    response["data"]["finished_at"] = finishedAt;
+    return response;
 }
 
 namespace

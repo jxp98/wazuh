@@ -50,6 +50,7 @@ static const char* XML_SYNC = "synchronization";
 
 // Type definitions
 typedef bool (*agent_info_parse_response_func)(const uint8_t* data, size_t data_len);
+typedef size_t (*agent_info_query_func)(const char* json_query, char** output);
 
 // Static module variables
 static int g_agent_info_queue = 0; // Output queue file descriptor
@@ -69,7 +70,10 @@ agent_info_set_cluster_name_func agent_info_set_cluster_name_ptr = NULL;
 agent_info_set_cluster_node_func agent_info_set_cluster_node_ptr = NULL;
 agent_info_set_agent_groups_func agent_info_set_agent_groups_ptr = NULL;
 
-// Sync protocol function pointers
+// 查询接口函数指针
+static agent_info_query_func agent_info_query_ptr = NULL;
+
+// 同步协议解析函数指针
 static agent_info_parse_response_func agent_info_parse_response_ptr = NULL;
 
 // Forward declarations (needed for WM_AGENT_INFO_CONTEXT)
@@ -82,6 +86,7 @@ void wm_agent_info_destroy(wm_agent_info_t* agent_info);
 cJSON* wm_agent_info_dump(const wm_agent_info_t* agent_info);
 int wm_agent_info_sync_message(const char* command, size_t command_len);
 void wm_agent_info_stop(void);
+static size_t wm_agent_info_query_handler(void* data, char* query, char** output);
 
 // Module context
 const wm_context WM_AGENT_INFO_CONTEXT = {.name = AGENT_INFO_WM_NAME,
@@ -90,7 +95,7 @@ const wm_context WM_AGENT_INFO_CONTEXT = {.name = AGENT_INFO_WM_NAME,
                                           .dump = (cJSON * (*)(const void*)) wm_agent_info_dump,
                                           .sync = (int (*)(const char*, size_t))wm_agent_info_sync_message,
                                           .stop = (void (*)(void*))wm_agent_info_stop,
-                                          .query = NULL};
+                                          .query = wm_agent_info_query_handler};
 
 // ==============================================================================
 // Static Helper Functions
@@ -270,6 +275,27 @@ static int wm_agent_info_query_module_wrapper(const char* module_name, const cha
     }
 
     return -1;
+}
+
+static size_t wm_agent_info_query_handler(void* data, char* query, char** output)
+{
+    (void)data;
+
+    if (!query || !output)
+    {
+        return 0;
+    }
+
+    if (agent_info_query_ptr)
+    {
+        return agent_info_query_ptr(query, output);
+    }
+
+    char error_msg[256];
+    snprintf(error_msg, sizeof(error_msg), "{\"error\":%d,\"message\":\"%s\"}",
+             MQ_ERR_MODULE_NOT_RUNNING, MQ_MSG_MODULE_NOT_RUNNING);
+    os_strdup(error_msg, *output);
+    return strlen(*output);
 }
 
 #ifdef WIN32
@@ -618,7 +644,8 @@ void* wm_agent_info_main(wm_agent_info_t* agent_info)
         agent_info_set_cluster_node_ptr = so_get_function_sym(agent_info_module, "agent_info_set_cluster_node");
         agent_info_set_agent_groups_ptr = so_get_function_sym(agent_info_module, "agent_info_set_agent_groups");
 
-        // Get sync protocol function pointers
+        // 获取查询接口与同步协议解析函数指针
+        agent_info_query_ptr = so_get_function_sym(agent_info_module, "agent_info_query");
         agent_info_parse_response_ptr = so_get_function_sym(agent_info_module, "agent_info_parse_response");
 
         // Set the logging function pointer in the agent-info module
@@ -633,7 +660,7 @@ void* wm_agent_info_main(wm_agent_info_t* agent_info)
             agent_info_set_report_function_ptr(wm_agent_info_send_stateless);
         }
 
-        // Set the query module function for inter-module communication
+        // 设置模块间查询回调，供 agent-info 转发控制命令
         if (agent_info_set_query_module_function_ptr)
         {
             agent_info_set_query_module_function_ptr(wm_agent_info_query_module_wrapper);
