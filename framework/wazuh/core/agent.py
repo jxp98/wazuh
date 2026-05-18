@@ -1467,14 +1467,16 @@ def send_wmodules_query_command(agent_id: str = '', module_name: str = '', comma
     query = command if isinstance(command, str) else json.dumps(command or {}, separators=(',', ':'))
 
     with WazuhSocket(common.REMOTED_SOCKET) as s:
+        s.s.settimeout(30)
         s.send(f"{agent_id} wmodules query {module_name} {query}".encode())
         response = s.receive().decode()
 
-    if response.startswith('err '):
-        raise WazuhInternalError(1014, extra_message=f"Agent {agent_id}: {response}")
-
-    if response.startswith('ok '):
-        response = response[3:]
+    if ' ' in response:
+        status, payload = response.split(' ', 1)
+        if status == 'err':
+            raise WazuhInternalError(1014, extra_message=f"Agent {agent_id}: {payload}")
+        if status == 'ok':
+            response = payload
 
     try:
         return json.loads(response)

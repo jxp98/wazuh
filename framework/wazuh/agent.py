@@ -460,15 +460,34 @@ def _build_runtime_java_control_item(agent_id: str, response: dict) -> dict:
     }
 
 
+def _normalize_agent_list_input(args: tuple, agent_list: list = None) -> list:
+    """兼容 expose_resources 装饰器下的 direct call 位置参数。"""
+    if not args:
+        return agent_list
+
+    requested = args[0]
+    if requested is None:
+        return agent_list
+
+    if not isinstance(requested, list):
+        requested = [requested]
+
+    if agent_list is None:
+        return requested
+
+    return [agent_id for agent_id in requested if agent_id in agent_list]
+
+
 @expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
                   post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764]},
                   post_proc_func=async_list_handler)
-async def rescan_runtime_java(agent_list: list = None) -> AffectedItemsWazuhResult:
+async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
     """主动触发一组 agent 执行 runtime-java 复扫。"""
     result = AffectedItemsWazuhResult(all_msg='Runtime Java rescan command was sent to all agents',
                                       some_msg='Runtime Java rescan command was not sent to some agents',
                                       none_msg='Runtime Java rescan command was not sent to any agent'
                                       )
+    agent_list = _normalize_agent_list_input(args, agent_list)
     agent_list = set(agent_list)
 
     if agent_list:
@@ -506,28 +525,31 @@ async def rescan_runtime_java(agent_list: list = None) -> AffectedItemsWazuhResu
 @expose_resources(actions=['cluster:read', 'agent:rescan'], resources=[f'node:id:{node_id}', 'agent:id:{agent_list}'],
                   post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764], 'force': True},
                   post_proc_func=async_list_handler)
-async def rescan_runtime_java_by_node(agent_list: list = None) -> AffectedItemsWazuhResult:
+async def rescan_runtime_java_by_node(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
     """按节点触发 agent 执行 runtime-java 复扫。"""
+    agent_list = _normalize_agent_list_input(args, agent_list)
     return await rescan_runtime_java(agent_list=agent_list)
 
 
 @expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
                   post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764], 'force': True},
                   post_proc_func=async_list_handler)
-async def rescan_runtime_java_by_group(agent_list: list = None) -> AffectedItemsWazuhResult:
+async def rescan_runtime_java_by_group(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
     """按分组触发 agent 执行 runtime-java 复扫。"""
+    agent_list = _normalize_agent_list_input(args, agent_list)
     return await rescan_runtime_java(agent_list=agent_list)
 
 
 @expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"],
                   post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1763, 1764]},
                   post_proc_func=async_list_handler)
-async def get_runtime_java_rescan_status(agent_list: list = None) -> AffectedItemsWazuhResult:
+async def get_runtime_java_rescan_status(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
     """查询一组 agent 最近一次 runtime-java 复扫状态。"""
     result = AffectedItemsWazuhResult(all_msg='Runtime Java rescan status was returned for all agents',
                                       some_msg='Runtime Java rescan status was not returned for some agents',
                                       none_msg='Runtime Java rescan status was not returned for any agent'
                                       )
+    agent_list = _normalize_agent_list_input(args, agent_list)
     agent_list = set(agent_list)
 
     if agent_list:
@@ -565,16 +587,18 @@ async def get_runtime_java_rescan_status(agent_list: list = None) -> AffectedIte
 @expose_resources(actions=['cluster:read', 'agent:read'], resources=[f'node:id:{node_id}', 'agent:id:{agent_list}'],
                   post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1763, 1764], 'force': True},
                   post_proc_func=async_list_handler)
-async def get_runtime_java_rescan_status_by_node(agent_list: list = None) -> AffectedItemsWazuhResult:
+async def get_runtime_java_rescan_status_by_node(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
     """按节点查询 agent 最近一次 runtime-java 复扫状态。"""
+    agent_list = _normalize_agent_list_input(args, agent_list)
     return await get_runtime_java_rescan_status(agent_list=agent_list)
 
 
 @expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"],
                   post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1763, 1764], 'force': True},
                   post_proc_func=async_list_handler)
-async def get_runtime_java_rescan_status_by_group(agent_list: list = None) -> AffectedItemsWazuhResult:
+async def get_runtime_java_rescan_status_by_group(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
     """按分组查询 agent 最近一次 runtime-java 复扫状态。"""
+    agent_list = _normalize_agent_list_input(args, agent_list)
     return await get_runtime_java_rescan_status(agent_list=agent_list)
 
 

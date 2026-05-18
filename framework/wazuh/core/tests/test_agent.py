@@ -1163,7 +1163,7 @@ def test_send_reload_command(mock_socket_cls, agent_id, mock_response, should_ra
     (
         send_runtime_java_rescan_command,
         '001 wmodules query agent-info {"command":"rescan_runtime_java"}',
-        b'{"error":0,"message":"Runtime Java rescan completed","data":{"status":"completed"}}'
+        b'ok {"error":0,"message":"Runtime Java rescan completed","data":{"status":"completed"}}'
     ),
     (
         get_runtime_java_rescan_status_command,
