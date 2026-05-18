@@ -460,6 +460,48 @@ def _build_runtime_java_control_item(agent_id: str, response: dict) -> dict:
     }
 
 
+def _extract_runtime_java_rescan_state(response: dict | None) -> dict:
+    """从 get_runtime_java_rescan_status 响应中提取 rescan 状态。"""
+    if not response:
+        return {}
+
+    data = response.get('data', {}) if isinstance(response, dict) else {}
+    rescan = data.get('rescan', {})
+    return rescan if isinstance(rescan, dict) else {}
+
+
+def _is_runtime_java_remote_timeout(error: WazuhException) -> bool:
+    """判断远程 request 失败是否属于等待 agent 响应超时。"""
+    message = str(error)
+    return 'Response timeout' in message or 'timed out' in message
+
+
+def _has_runtime_java_rescan_state_advanced(previous: dict, current: dict) -> bool:
+    """判断一次 rescan 请求后状态是否已经发生推进。"""
+    if not current:
+        return False
+
+    if current.get('request_id') and current.get('request_id') != previous.get('request_id'):
+        return True
+
+    if current.get('started_at') and current.get('started_at') != previous.get('started_at'):
+        return True
+
+    return previous.get('status') != current.get('status')
+
+
+def _build_runtime_java_accepted_response(status_response: dict) -> dict:
+    """构造“请求已受理，完成状态需后查”的统一返回。"""
+    response_data = status_response.get('data', {}).copy()
+    response_data['delivery'] = 'async_status_poll_required'
+
+    return {
+        'error': 0,
+        'message': 'Runtime Java rescan request accepted; completion status must be queried asynchronously',
+        'data': response_data
+    }
+
+
 def _normalize_agent_list_input(args: tuple, agent_list: list = None) -> list:
     """兼容 expose_resources 装饰器下的 direct call 位置参数。"""
     if not args:
@@ -507,6 +549,15 @@ async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWa
                 result.add_failed_item(id_=agent_id, error=WazuhError(1762))
                 continue
 
+            previous_status_response = None
+            previous_status = {}
+
+            try:
+                previous_status_response = get_runtime_java_rescan_status_command(agent_id)
+                previous_status = _extract_runtime_java_rescan_state(previous_status_response)
+            except WazuhException:
+                previous_status = {}
+
             try:
                 response = send_runtime_java_rescan_command(agent_id)
                 if response.get('error', 1) != 0:
@@ -514,7 +565,22 @@ async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWa
 
                 result.affected_items.append(_build_runtime_java_control_item(agent_id, response))
             except WazuhException as e:
-                result.add_failed_item(id_=agent_id, error=e)
+                recovered = None
+
+                if _is_runtime_java_remote_timeout(e):
+                    try:
+                        current_status_response = get_runtime_java_rescan_status_command(agent_id)
+                        current_status = _extract_runtime_java_rescan_state(current_status_response)
+
+                        if _has_runtime_java_rescan_state_advanced(previous_status, current_status):
+                            recovered = _build_runtime_java_accepted_response(current_status_response)
+                    except WazuhException:
+                        recovered = None
+
+                if recovered:
+                    result.affected_items.append(_build_runtime_java_control_item(agent_id, recovered))
+                else:
+                    result.add_failed_item(id_=agent_id, error=e)
 
         result.total_affected_items = len(result.affected_items)
         result.affected_items.sort(key=operator.itemgetter('agent'))

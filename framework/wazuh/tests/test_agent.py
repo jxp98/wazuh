@@ -378,6 +378,27 @@ async def test_agent_get_runtime_java_rescan_status(socket_mock, send_http_mock,
         assert code == error_code, f'"{error_code}" code was expected but "{code}" was received.'
 
 
+@patch('wazuh.agent.get_runtime_java_rescan_status_command', side_effect=[
+    {'error': 0, 'message': 'Runtime Java rescan status retrieved',
+     'data': {'rescan': {'status': 'never_run', 'request_id': None, 'started_at': None}}},
+    {'error': 0, 'message': 'Runtime Java rescan status retrieved',
+     'data': {'rescan': {'status': 'running', 'request_id': 'new-request', 'started_at': '2026-05-18T16:34:12Z'}}}
+])
+@patch('wazuh.agent.send_runtime_java_rescan_command', side_effect=WazuhInternalError(1014, extra_message='Agent 010: Response timeout'))
+@patch('wazuh.agent.get_agents_info', return_value=set(short_agent_list))
+@patch('wazuh.core.wdb_http.WazuhDBHTTPClient._post', side_effect=send_msg_to_wdb_http_post_restartinfo)
+@patch('socket.socket.connect')
+async def test_agent_rescan_runtime_java_recovers_timeout_with_status_poll(socket_mock, send_http_mock,
+                                                                           agents_info_mock, send_rescan_mock,
+                                                                           send_status_mock):
+    result = await rescan_runtime_java(['010'])
+
+    assert isinstance(result, AffectedItemsWazuhResult)
+    assert result.total_failed_items == 0
+    assert result.affected_items[0]['agent'] == '010'
+    assert result.affected_items[0]['message'] == 'Runtime Java rescan request accepted; completion status must be queried asynchronously'
+
+
 @pytest.mark.parametrize('agent_list, expected_items, error_code', [
     (['010'],        ['010'], None),   # v5.0.0 - succeeds
     (['001', '002'], [],      1761),   # v4.x agents - version guard rejects both

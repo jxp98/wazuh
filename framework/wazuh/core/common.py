@@ -23,6 +23,10 @@ def find_wazuh_path() -> str:
     str
         Path where Wazuh is installed or empty string if there is no framework in the environment.
     """
+    env_path = os.environ.get('WAZUH_PATH') or os.environ.get('WAZUH_HOME')
+    if env_path:
+        return env_path
+
     abs_path = os.path.abspath(os.path.dirname(__file__))
     allparts = []
     while 1:

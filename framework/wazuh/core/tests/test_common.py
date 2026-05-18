@@ -26,6 +26,11 @@ def test_find_wazuh_path_relative_path():
         assert (find_wazuh_path.__wrapped__() == '~')
 
 
+def test_find_wazuh_path_env_override():
+    with patch.dict('os.environ', {'WAZUH_PATH': '/var/wazuh-manager'}):
+        assert find_wazuh_path.__wrapped__() == '/var/wazuh-manager'
+
+
 def test_wazuh_uid():
     with patch('wazuh.core.common.getpwnam', return_value=getpwnam("root")):
         wazuh_uid()
