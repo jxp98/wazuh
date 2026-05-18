@@ -18,6 +18,7 @@
 #include "wmodules.h"
 
 #include "agent_sync_protocol_c_interface_types.h"
+#include "module_query_errors.h"
 #include "logging_helper.h"
 #include "mq_op.h"
 #include "rc.h"
