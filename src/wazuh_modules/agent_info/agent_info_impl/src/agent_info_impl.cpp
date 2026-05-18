@@ -151,6 +151,8 @@ AgentInfoImpl::AgentInfoImpl(std::string dbPath,
     m_runtimeJavaRescanState["collector"] = "runtime_java";
     m_runtimeJavaRescanState["target_module"] = SYSCOLLECTOR_WM_NAME;
     m_runtimeJavaRescanState["target_command"] = "scan_runtime_java_and_flush";
+    m_runtimeJavaRescanState["scan_status"] = "never_run";
+    m_runtimeJavaRescanState["delivery_status"] = "never_run";
     m_runtimeJavaRescanState["request_id"] = nullptr;
     m_runtimeJavaRescanState["started_at"] = nullptr;
     m_runtimeJavaRescanState["finished_at"] = nullptr;
@@ -1067,6 +1069,16 @@ nlohmann::json AgentInfoImpl::buildRuntimeJavaRescanStatusJson() const
         status["target_command"] = "scan_runtime_java_and_flush";
     }
 
+    if (!status.contains("scan_status"))
+    {
+        status["scan_status"] = "never_run";
+    }
+
+    if (!status.contains("delivery_status"))
+    {
+        status["delivery_status"] = "never_run";
+    }
+
     if (!status.contains("request_id"))
     {
         status["request_id"] = nullptr;
@@ -1112,6 +1124,8 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
             {"collector", "runtime_java"},
             {"target_module", SYSCOLLECTOR_WM_NAME},
             {"target_command", "scan_runtime_java_and_flush"},
+            {"scan_status", "running"},
+            {"delivery_status", "pending"},
             {"request_id", requestId},
             {"started_at", startedAt},
             {"finished_at", nullptr},
@@ -1129,17 +1143,22 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
 
         {
             std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
-            m_runtimeJavaRescanState["status"] = "error";
+            m_runtimeJavaRescanState["status"] = "completed";
             m_runtimeJavaRescanState["result"] = "error";
+            m_runtimeJavaRescanState["scan_status"] = "error";
+            m_runtimeJavaRescanState["delivery_status"] = "not_requested";
             m_runtimeJavaRescanState["finished_at"] = finishedAt;
             m_runtimeJavaRescanState["last_error"] = errorMessage;
         }
 
         response["error"] = MQ_ERR_INTERNAL;
         response["message"] = errorMessage;
-        response["data"]["status"] = "error";
+        response["data"]["status"] = "completed";
         response["data"]["result"] = "error";
+        response["data"]["scan_status"] = "error";
+        response["data"]["delivery_status"] = "not_requested";
         response["data"]["finished_at"] = finishedAt;
+        response["data"]["last_error"] = errorMessage;
         return response;
     }
 
@@ -1160,16 +1179,20 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
 
         {
             std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
-            m_runtimeJavaRescanState["status"] = "error";
+            m_runtimeJavaRescanState["status"] = "completed";
             m_runtimeJavaRescanState["result"] = "error";
+            m_runtimeJavaRescanState["scan_status"] = "error";
+            m_runtimeJavaRescanState["delivery_status"] = "not_requested";
             m_runtimeJavaRescanState["finished_at"] = finishedAt;
             m_runtimeJavaRescanState["last_error"] = scanResponse.response;
         }
 
         response["error"] = MQ_ERR_INTERNAL;
         response["message"] = "Failed to trigger runtime Java rescan through syscollector";
-        response["data"]["status"] = "error";
+        response["data"]["status"] = "completed";
         response["data"]["result"] = "error";
+        response["data"]["scan_status"] = "error";
+        response["data"]["delivery_status"] = "not_requested";
         response["data"]["finished_at"] = finishedAt;
         response["data"]["last_error"] = scanResponse.response;
         return response;
@@ -1178,20 +1201,24 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
     if (!pollFlushCompletion({SYSCOLLECTOR_WM_NAME}))
     {
         const auto finishedAt = Utils::getCurrentISO8601();
-        const std::string errorMessage = "Runtime Java rescan flush did not complete successfully";
+        const std::string errorMessage = "Runtime Java rescan completed locally, but immediate delivery did not complete successfully";
 
         {
             std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
-            m_runtimeJavaRescanState["status"] = "error";
-            m_runtimeJavaRescanState["result"] = "error";
+            m_runtimeJavaRescanState["status"] = "completed";
+            m_runtimeJavaRescanState["result"] = "partial_success";
+            m_runtimeJavaRescanState["scan_status"] = "completed";
+            m_runtimeJavaRescanState["delivery_status"] = "error";
             m_runtimeJavaRescanState["finished_at"] = finishedAt;
             m_runtimeJavaRescanState["last_error"] = errorMessage;
         }
 
-        response["error"] = MQ_ERR_INTERNAL;
+        response["error"] = MQ_SUCCESS;
         response["message"] = errorMessage;
-        response["data"]["status"] = "error";
-        response["data"]["result"] = "error";
+        response["data"]["status"] = "completed";
+        response["data"]["result"] = "partial_success";
+        response["data"]["scan_status"] = "completed";
+        response["data"]["delivery_status"] = "error";
         response["data"]["finished_at"] = finishedAt;
         response["data"]["last_error"] = errorMessage;
         return response;
@@ -1203,6 +1230,8 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
         std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
         m_runtimeJavaRescanState["status"] = "completed";
         m_runtimeJavaRescanState["result"] = "success";
+        m_runtimeJavaRescanState["scan_status"] = "completed";
+        m_runtimeJavaRescanState["delivery_status"] = "success";
         m_runtimeJavaRescanState["finished_at"] = finishedAt;
         m_runtimeJavaRescanState["last_error"] = nullptr;
     }
@@ -1211,6 +1240,8 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
     response["message"] = "Runtime Java rescan completed successfully";
     response["data"]["status"] = "completed";
     response["data"]["result"] = "success";
+    response["data"]["scan_status"] = "completed";
+    response["data"]["delivery_status"] = "success";
     response["data"]["finished_at"] = finishedAt;
     return response;
 }

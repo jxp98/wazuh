@@ -145,6 +145,8 @@ TEST_F(AgentInfoCoordinationTest, QueryRescanRuntimeJavaSuccess)
     EXPECT_EQ(responseJson["data"]["target_command"], "scan_runtime_java_and_flush");
     EXPECT_EQ(responseJson["data"]["status"], "completed");
     EXPECT_EQ(responseJson["data"]["result"], "success");
+    EXPECT_EQ(responseJson["data"]["scan_status"], "completed");
+    EXPECT_EQ(responseJson["data"]["delivery_status"], "success");
     EXPECT_TRUE(responseJson["data"].contains("request_id"));
     EXPECT_TRUE(responseJson["data"].contains("started_at"));
     EXPECT_TRUE(responseJson["data"].contains("finished_at"));
@@ -171,12 +173,77 @@ TEST_F(AgentInfoCoordinationTest, QueryGetRuntimeJavaRescanStatusReturnsDefaultB
     EXPECT_EQ(statusResponse["data"]["collector"], "runtime_java");
     EXPECT_EQ(statusResponse["data"]["rescan"]["status"], "never_run");
     EXPECT_EQ(statusResponse["data"]["rescan"]["result"], "never_run");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["scan_status"], "never_run");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["delivery_status"], "never_run");
     EXPECT_EQ(statusResponse["data"]["rescan"]["target_module"], "syscollector");
     EXPECT_EQ(statusResponse["data"]["rescan"]["target_command"], "scan_runtime_java_and_flush");
     EXPECT_TRUE(statusResponse["data"]["rescan"]["request_id"].is_null());
     EXPECT_TRUE(statusResponse["data"]["rescan"]["started_at"].is_null());
     EXPECT_TRUE(statusResponse["data"]["rescan"]["finished_at"].is_null());
     EXPECT_TRUE(statusResponse["data"]["rescan"]["last_error"].is_null());
+}
+
+TEST_F(AgentInfoCoordinationTest, QueryRescanRuntimeJavaReturnsPartialSuccessWhenImmediateDeliveryFails)
+{
+    auto queryModuleFunc = [](const std::string& moduleName, const std::string& query, char** response) -> int
+    {
+        EXPECT_EQ(moduleName, "syscollector");
+
+        if (response)
+        {
+            const auto queryJson = nlohmann::json::parse(query);
+            const auto command = queryJson["command"].get<std::string>();
+
+            if (command == "scan_runtime_java_and_flush")
+            {
+                *response = strdup(R"({"error":0,"message":"Runtime Java inventory scan completed and flush requested","data":{"module":"syscollector","collector":"runtime_java","action":"scan_runtime_java_and_flush","scan":"completed","flush":"requested"}})");
+            }
+            else if (command == "is_flush_completed")
+            {
+                *response = strdup(R"({"error":0,"message":"Syscollector flush completed with error","data":{"module":"syscollector","status":"completed","result":"error"}})");
+            }
+            else
+            {
+                *response = strdup(R"({"error":1,"message":"Unexpected command"})");
+            }
+        }
+
+        return 0;
+    };
+
+    m_agentInfo = std::make_shared<AgentInfoImpl>(
+                      ":memory:",
+                      m_reportDiffFunc,
+                      m_logFunc,
+                      queryModuleFunc,
+                      m_mockDBSync,
+                      m_mockSysInfo,
+                      m_mockFileIO,
+                      m_mockFileSystem
+                  );
+
+    m_agentInfo->setFlushPollDelayMs(0);
+
+    const auto responseJson = nlohmann::json::parse(m_agentInfo->query(R"({"command":"rescan_runtime_java"})"));
+
+    EXPECT_EQ(responseJson["error"], 0);
+    EXPECT_EQ(responseJson["data"]["module"], "agent-info");
+    EXPECT_EQ(responseJson["data"]["action"], "rescan_runtime_java");
+    EXPECT_EQ(responseJson["data"]["status"], "completed");
+    EXPECT_EQ(responseJson["data"]["result"], "partial_success");
+    EXPECT_EQ(responseJson["data"]["scan_status"], "completed");
+    EXPECT_EQ(responseJson["data"]["delivery_status"], "error");
+    EXPECT_EQ(responseJson["message"], "Runtime Java rescan completed locally, but immediate delivery did not complete successfully");
+    EXPECT_EQ(responseJson["data"]["last_error"], "Runtime Java rescan completed locally, but immediate delivery did not complete successfully");
+
+    const auto statusResponse = nlohmann::json::parse(m_agentInfo->query(R"({"command":"get_runtime_java_rescan_status"})"));
+
+    EXPECT_EQ(statusResponse["error"], 0);
+    EXPECT_EQ(statusResponse["data"]["rescan"]["status"], "completed");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["result"], "partial_success");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["scan_status"], "completed");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["delivery_status"], "error");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["last_error"], "Runtime Java rescan completed locally, but immediate delivery did not complete successfully");
 }
 
 TEST_F(AgentInfoCoordinationTest, QueryGetRuntimeJavaRescanStatusReturnsLatestState)
@@ -230,6 +297,9 @@ TEST_F(AgentInfoCoordinationTest, QueryGetRuntimeJavaRescanStatusReturnsLatestSt
     EXPECT_EQ(statusResponse["data"]["action"], "get_runtime_java_rescan_status");
     EXPECT_EQ(statusResponse["data"]["collector"], "runtime_java");
     EXPECT_EQ(statusResponse["data"]["rescan"]["status"], "completed");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["result"], "success");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["scan_status"], "completed");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["delivery_status"], "success");
     EXPECT_EQ(statusResponse["data"]["rescan"]["collector"], "runtime_java");
     EXPECT_EQ(statusResponse["data"]["rescan"]["target_module"], "syscollector");
     EXPECT_TRUE(statusResponse["data"]["rescan"].contains("request_id"));

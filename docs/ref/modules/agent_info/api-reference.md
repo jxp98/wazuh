@@ -87,6 +87,15 @@ size_t agent_info_query(const char* json_query, char** output);
 - `rescan_runtime_java`
 - `get_runtime_java_rescan_status`
 
+`rescan_runtime_java` 会区分两段状态：
+- `scan_status`：本地 runtime-java 复扫是否完成
+- `delivery_status`：立即触发的同步送达是否完成
+
+因此返回结果可能是：
+- `result = success`：本地复扫完成，且立即送达成功
+- `result = partial_success`：本地复扫完成，但立即送达失败，后续会由常规同步重试
+- `result = error`：复扫命令本身未能成功执行
+
 ---
 
 ## C++ Implementation (`AgentInfoImpl`)
