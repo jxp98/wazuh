@@ -230,6 +230,12 @@ class WazuhException(Exception):
                },
         1761: {'message': 'Could not send restart/reload command. This operation via API requires agent version 5.0 or higher.'
                },
+        1762: {'message': 'Could not send runtime Java rescan command. This operation via API requires agent version 5.0 or higher.'
+               },
+        1763: {'message': 'Could not send runtime Java rescan status command. This operation via API requires agent version 5.0 or higher.'
+               },
+        1764: {'message': 'Runtime Java control query failed on the agent.'
+               },
 
         # Manager:
         1901: {'message': 'Control socket has not been created'

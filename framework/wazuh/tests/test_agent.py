@@ -31,7 +31,7 @@ with patch('wazuh.core.common.wazuh_uid'):
             get_distinct_agents, get_file_conf, get_full_overview, get_group_files, get_outdated_agents, \
             get_upgrade_result, remove_agent_from_group, remove_agent_from_groups, remove_agents_from_group, \
             restart_agents, upgrade_agents, upload_group_file, restart_agents_by_node, reconnect_agents, \
-            reload_agents, reload_agents_by_node, \
+            reload_agents, reload_agents_by_node, rescan_runtime_java, get_runtime_java_rescan_status, \
             check_uninstall_permission, ERROR_CODES_UPGRADE_SOCKET_BAD_REQUEST, ERROR_CODES_UPGRADE_SOCKET
         from wazuh.core.agent import Agent
         from wazuh import WazuhError, WazuhException, WazuhInternalError
@@ -325,6 +325,54 @@ async def test_agent_reload_agents(socket_mock, send_http_mock, agents_info_mock
     result = await reload_agents(agent_list)
     assert isinstance(result, AffectedItemsWazuhResult), 'The returned object is not an "AffectedItemsWazuhResult".'
     assert result.affected_items == expected_items, f'"Affected_items" does not match. Should be "{expected_items}".'
+    if result.failed_items:
+        code = next(iter(result.failed_items.keys())).code
+        assert code == error_code, f'"{error_code}" code was expected but "{code}" was received.'
+
+
+@pytest.mark.parametrize('agent_list, expected_items, error_code', [
+    (['010'],        ['010'], None),
+    (['001', '002'], [],      1762),
+    (['001', '010'], ['010'], 1762),
+    (['010', '500'], ['010'], 1701),
+])
+@patch('wazuh.agent.send_runtime_java_rescan_command', return_value={
+    'error': 0,
+    'message': 'Runtime Java rescan completed locally, but immediate delivery did not complete successfully',
+    'data': {'status': 'completed', 'result': 'partial_success', 'collector': 'runtime_java'}
+})
+@patch('wazuh.agent.get_agents_info', return_value=set(short_agent_list))
+@patch('wazuh.core.wdb_http.WazuhDBHTTPClient._post', side_effect=send_msg_to_wdb_http_post_restartinfo)
+@patch('socket.socket.connect')
+async def test_agent_rescan_runtime_java(socket_mock, send_http_mock, agents_info_mock, send_rescan_mock, agent_list,
+                                         expected_items, error_code):
+    result = await rescan_runtime_java(agent_list)
+    assert isinstance(result, AffectedItemsWazuhResult)
+    assert [item['agent'] for item in result.affected_items] == expected_items
+    if result.failed_items:
+        code = next(iter(result.failed_items.keys())).code
+        assert code == error_code, f'"{error_code}" code was expected but "{code}" was received.'
+
+
+@pytest.mark.parametrize('agent_list, expected_items, error_code', [
+    (['010'],        ['010'], None),
+    (['001', '002'], [],      1763),
+    (['001', '010'], ['010'], 1763),
+    (['010', '500'], ['010'], 1701),
+])
+@patch('wazuh.agent.get_runtime_java_rescan_status_command', return_value={
+    'error': 0,
+    'message': 'Runtime Java rescan status retrieved',
+    'data': {'rescan': {'status': 'never_run', 'result': 'never_run'}}
+})
+@patch('wazuh.agent.get_agents_info', return_value=set(short_agent_list))
+@patch('wazuh.core.wdb_http.WazuhDBHTTPClient._post', side_effect=send_msg_to_wdb_http_post_restartinfo)
+@patch('socket.socket.connect')
+async def test_agent_get_runtime_java_rescan_status(socket_mock, send_http_mock, agents_info_mock, send_status_mock,
+                                                    agent_list, expected_items, error_code):
+    result = await get_runtime_java_rescan_status(agent_list)
+    assert isinstance(result, AffectedItemsWazuhResult)
+    assert [item['agent'] for item in result.affected_items] == expected_items
     if result.failed_items:
         code = next(iter(result.failed_items.keys())).code
         assert code == error_code, f'"{error_code}" code was expected but "{code}" was received.'

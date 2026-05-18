@@ -187,6 +187,27 @@ get_rbac_actions:
           - PUT /agents/group/{group_id}/reload
           - PUT /agents/node/{node_id}/reload
           - PUT /agents/reload
+      agent:rescan:
+        description: Trigger runtime Java rescan on agents
+        resources:
+          - agent:id
+          - agent:group
+        example:
+          actions:
+            - agent:rescan
+          resources:
+            - agent:id:050
+            - agent:id:049
+          effect: deny
+        related_endpoints:
+          - PUT /agents/{agent_id}/runtime_java/rescan
+          - PUT /agents/group/{group_id}/runtime_java/rescan
+          - PUT /agents/node/{node_id}/runtime_java/rescan
+          - PUT /agents/runtime_java/rescan
+          - GET /agents/{agent_id}/runtime_java/rescan
+          - GET /agents/group/{group_id}/runtime_java/rescan
+          - GET /agents/node/{node_id}/runtime_java/rescan
+          - GET /agents/runtime_java/rescan
       agent:uninstall:
         description: Check user's permission to uninstall agents
         example:

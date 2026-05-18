@@ -11,7 +11,7 @@ from wazuh.core import common, configuration
 from wazuh.core.InputValidator import InputValidator
 from wazuh.core.agent import WazuhDBQueryAgents, WazuhDBQueryGroupByAgents, Agent, \
     WazuhDBQueryGroup, create_upgrade_tasks, get_agents_info, get_groups, get_rbac_filters, send_restart_command, \
-    send_reload_command, \
+    send_reload_command, send_runtime_java_rescan_command, get_runtime_java_rescan_status_command, \
     GROUP_FIELDS, GROUP_REQUIRED_FIELDS, GROUP_FILES_FIELDS, GROUP_FILES_REQUIRED_FIELDS
 from wazuh.core.wdb_http import get_wdb_http_client
 from wazuh.core.cluster.cluster import get_node
@@ -48,6 +48,7 @@ ERROR_CODES_UPGRADE_SOCKET_GET_UPGRADE_RESULT = [1813]
 STATUS = 'status'
 COUNT = 'count'
 GROUP_CONFIG_STATUS = 'group_config_status'
+RUNTIME_JAVA_REMOTE_CONTROL_MIN_VERSION = WazuhVersion('v5.0.0')
 
 
 @expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"], post_proc_func=None)
@@ -434,6 +435,147 @@ async def reload_agents_by_group(agent_list: list = None) -> AffectedItemsWazuhR
         Affected items.
     """
     return await reload_agents(agent_list=agent_list)
+
+
+async def _get_active_remote_control_agents(agent_list: set[str]) -> tuple[set[str], dict[str, str]]:
+    """获取可用于远程控制校验的系统 agent 与活跃版本信息。"""
+    system_agents = get_agents_info()
+    rbac_filters = get_rbac_filters(system_resources=system_agents, permitted_resources=list(agent_list))
+
+    async with get_wdb_http_client() as wdb_client:
+        active_agents = await wdb_client.get_agents_restart_info(
+            rbac_filters['filters']['rbac_ids'],
+            rbac_filters['rbac_negate']
+        )
+
+    return system_agents, {agent['id']: agent['version'] for agent in active_agents}
+
+
+def _build_runtime_java_control_item(agent_id: str, response: dict) -> dict:
+    """构造 runtime-java 远程控制接口的统一返回项。"""
+    return {
+        'agent': agent_id,
+        'message': response.get('message'),
+        'data': response.get('data', {})
+    }
+
+
+@expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764]},
+                  post_proc_func=async_list_handler)
+async def rescan_runtime_java(agent_list: list = None) -> AffectedItemsWazuhResult:
+    """主动触发一组 agent 执行 runtime-java 复扫。"""
+    result = AffectedItemsWazuhResult(all_msg='Runtime Java rescan command was sent to all agents',
+                                      some_msg='Runtime Java rescan command was not sent to some agents',
+                                      none_msg='Runtime Java rescan command was not sent to any agent'
+                                      )
+    agent_list = set(agent_list)
+
+    if agent_list:
+        system_agents, active_agents = await _get_active_remote_control_agents(agent_list)
+
+        for agent_id in agent_list:
+            if agent_id not in system_agents:
+                result.add_failed_item(id_=agent_id, error=WazuhResourceNotFound(1701))
+                continue
+
+            if agent_id not in active_agents:
+                result.add_failed_item(id_=agent_id, error=WazuhError(1707))
+                continue
+
+            version = active_agents[agent_id]
+            if not version or WazuhVersion(version) < RUNTIME_JAVA_REMOTE_CONTROL_MIN_VERSION:
+                result.add_failed_item(id_=agent_id, error=WazuhError(1762))
+                continue
+
+            try:
+                response = send_runtime_java_rescan_command(agent_id)
+                if response.get('error', 1) != 0:
+                    raise WazuhError(1764, extra_message=f"Agent {agent_id}: {response.get('message', 'Unknown error')}")
+
+                result.affected_items.append(_build_runtime_java_control_item(agent_id, response))
+            except WazuhException as e:
+                result.add_failed_item(id_=agent_id, error=e)
+
+        result.total_affected_items = len(result.affected_items)
+        result.affected_items.sort(key=operator.itemgetter('agent'))
+
+    return result
+
+
+@expose_resources(actions=['cluster:read', 'agent:rescan'], resources=[f'node:id:{node_id}', 'agent:id:{agent_list}'],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764], 'force': True},
+                  post_proc_func=async_list_handler)
+async def rescan_runtime_java_by_node(agent_list: list = None) -> AffectedItemsWazuhResult:
+    """按节点触发 agent 执行 runtime-java 复扫。"""
+    return await rescan_runtime_java(agent_list=agent_list)
+
+
+@expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764], 'force': True},
+                  post_proc_func=async_list_handler)
+async def rescan_runtime_java_by_group(agent_list: list = None) -> AffectedItemsWazuhResult:
+    """按分组触发 agent 执行 runtime-java 复扫。"""
+    return await rescan_runtime_java(agent_list=agent_list)
+
+
+@expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1763, 1764]},
+                  post_proc_func=async_list_handler)
+async def get_runtime_java_rescan_status(agent_list: list = None) -> AffectedItemsWazuhResult:
+    """查询一组 agent 最近一次 runtime-java 复扫状态。"""
+    result = AffectedItemsWazuhResult(all_msg='Runtime Java rescan status was returned for all agents',
+                                      some_msg='Runtime Java rescan status was not returned for some agents',
+                                      none_msg='Runtime Java rescan status was not returned for any agent'
+                                      )
+    agent_list = set(agent_list)
+
+    if agent_list:
+        system_agents, active_agents = await _get_active_remote_control_agents(agent_list)
+
+        for agent_id in agent_list:
+            if agent_id not in system_agents:
+                result.add_failed_item(id_=agent_id, error=WazuhResourceNotFound(1701))
+                continue
+
+            if agent_id not in active_agents:
+                result.add_failed_item(id_=agent_id, error=WazuhError(1707))
+                continue
+
+            version = active_agents[agent_id]
+            if not version or WazuhVersion(version) < RUNTIME_JAVA_REMOTE_CONTROL_MIN_VERSION:
+                result.add_failed_item(id_=agent_id, error=WazuhError(1763))
+                continue
+
+            try:
+                response = get_runtime_java_rescan_status_command(agent_id)
+                if response.get('error', 1) != 0:
+                    raise WazuhError(1764, extra_message=f"Agent {agent_id}: {response.get('message', 'Unknown error')}")
+
+                result.affected_items.append(_build_runtime_java_control_item(agent_id, response))
+            except WazuhException as e:
+                result.add_failed_item(id_=agent_id, error=e)
+
+        result.total_affected_items = len(result.affected_items)
+        result.affected_items.sort(key=operator.itemgetter('agent'))
+
+    return result
+
+
+@expose_resources(actions=['cluster:read', 'agent:read'], resources=[f'node:id:{node_id}', 'agent:id:{agent_list}'],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1763, 1764], 'force': True},
+                  post_proc_func=async_list_handler)
+async def get_runtime_java_rescan_status_by_node(agent_list: list = None) -> AffectedItemsWazuhResult:
+    """按节点查询 agent 最近一次 runtime-java 复扫状态。"""
+    return await get_runtime_java_rescan_status(agent_list=agent_list)
+
+
+@expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1763, 1764], 'force': True},
+                  post_proc_func=async_list_handler)
+async def get_runtime_java_rescan_status_by_group(agent_list: list = None) -> AffectedItemsWazuhResult:
+    """按分组查询 agent 最近一次 runtime-java 复扫状态。"""
+    return await get_runtime_java_rescan_status(agent_list=agent_list)
 
 
 @expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"],

@@ -20,6 +20,7 @@ default_policies:
           - agent:reconnect
           - agent:restart
           - agent:reload
+          - agent:rescan
           - agent:upgrade
         resources:
           - agent:id:*

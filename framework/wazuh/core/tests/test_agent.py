@@ -1159,6 +1159,41 @@ def test_send_reload_command(mock_socket_cls, agent_id, mock_response, should_ra
         assert result == mock_response.decode()
 
 
+@pytest.mark.parametrize('helper, expected_payload, mock_response', [
+    (
+        send_runtime_java_rescan_command,
+        '001 wmodules query agent-info {"command":"rescan_runtime_java"}',
+        b'{"error":0,"message":"Runtime Java rescan completed","data":{"status":"completed"}}'
+    ),
+    (
+        get_runtime_java_rescan_status_command,
+        '001 wmodules query agent-info {"command":"get_runtime_java_rescan_status"}',
+        b'{"error":0,"message":"Runtime Java rescan status retrieved","data":{"rescan":{"status":"never_run"}}}'
+    )
+])
+@patch('wazuh.core.agent.WazuhSocket')
+def test_send_runtime_java_agent_info_commands(mock_socket_cls, helper, expected_payload, mock_response):
+    mock_instance = mock_socket_cls.return_value
+    mock_instance.__enter__.return_value = mock_instance
+    mock_instance.receive.return_value = mock_response
+
+    result = helper('001')
+
+    mock_socket_cls.assert_called_with(common.REMOTED_SOCKET)
+    mock_instance.send.assert_called_with(expected_payload.encode())
+    assert result['error'] == 0
+
+
+@patch('wazuh.core.agent.WazuhSocket')
+def test_send_wmodules_query_command_raises_on_transport_error(mock_socket_cls):
+    mock_instance = mock_socket_cls.return_value
+    mock_instance.__enter__.return_value = mock_instance
+    mock_instance.receive.return_value = b'err Response timeout'
+
+    with pytest.raises(WazuhInternalError):
+        send_runtime_java_rescan_command('001')
+
+
 def test_get_agents_info():
     """Test that get_agents_info() returns expected agent IDs"""
     with open(os.path.join(test_data_path, 'client.keys')) as f:

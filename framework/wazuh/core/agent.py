@@ -1462,6 +1462,44 @@ def send_reload_command(agent_id: str = '') -> str:
     return response
 
 
+def send_wmodules_query_command(agent_id: str = '', module_name: str = '', command: dict | str | None = None) -> dict:
+    """通过 remoted request 通道向 agent 的 wmodules query 发送命令。"""
+    query = command if isinstance(command, str) else json.dumps(command or {}, separators=(',', ':'))
+
+    with WazuhSocket(common.REMOTED_SOCKET) as s:
+        s.send(f"{agent_id} wmodules query {module_name} {query}".encode())
+        response = s.receive().decode()
+
+    if response.startswith('err '):
+        raise WazuhInternalError(1014, extra_message=f"Agent {agent_id}: {response}")
+
+    if response.startswith('ok '):
+        response = response[3:]
+
+    try:
+        return json.loads(response)
+    except json.JSONDecodeError as exc:
+        raise WazuhInternalError(1118, extra_message=f"Agent {agent_id}: {exc.msg}") from exc
+
+
+def send_runtime_java_rescan_command(agent_id: str = '') -> dict:
+    """向 agent-info 模块发送 runtime-java 复扫命令。"""
+    return send_wmodules_query_command(
+        agent_id=agent_id,
+        module_name='agent-info',
+        command={'command': 'rescan_runtime_java'}
+    )
+
+
+def get_runtime_java_rescan_status_command(agent_id: str = '') -> dict:
+    """向 agent-info 模块查询最近一次 runtime-java 复扫状态。"""
+    return send_wmodules_query_command(
+        agent_id=agent_id,
+        module_name='agent-info',
+        command={'command': 'get_runtime_java_rescan_status'}
+    )
+
+
 @common.context_cached("system_agents")
 def get_agents_info() -> set:
     """Get all agent IDs in the system.
