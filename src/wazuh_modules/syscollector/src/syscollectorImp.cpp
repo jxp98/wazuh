@@ -1993,6 +1993,242 @@ bool Syscollector::runOnDemandRuntimeJavaScan(std::string& errorMessage)
     return success;
 }
 
+bool Syscollector::runOnDemandRuntimeJavaFullSync(std::string& errorMessage)
+{
+    if (!runOnDemandRuntimeJavaScan(errorMessage))
+    {
+        return false;
+    }
+
+    if (m_logFunction)
+    {
+        m_logFunction(LOG_INFO, "Starting full runtime Java inventory synchronization.");
+    }
+
+    const bool success = performTableFullSync(RUNTIME_JAVA_COMPONENTS_TABLE, errorMessage);
+
+    if (success)
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_INFO, "Full runtime Java inventory synchronization finished.");
+        }
+    }
+    else if (errorMessage.empty())
+    {
+        errorMessage = "Full runtime Java inventory synchronization failed";
+    }
+
+    return success;
+}
+
+IAgentSyncProtocol* Syscollector::getSyncProtocolForIndex(const std::string& index,
+                                                          Option& option,
+                                                          bool& isVdProtocol,
+                                                          bool& firstSyncDone)
+{
+    isVdProtocol = (index == SYSCOLLECTOR_SYNC_INDEX_SYSTEM ||
+                    index == SYSCOLLECTOR_SYNC_INDEX_PACKAGES ||
+                    index == SYSCOLLECTOR_SYNC_INDEX_HOTFIXES ||
+                    index == SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS);
+    firstSyncDone = false;
+    option = Option::SYNC;
+
+    if (isVdProtocol)
+    {
+        if (!m_spSyncProtocolVD)
+        {
+            return nullptr;
+        }
+
+        firstSyncDone = isVDFirstSyncDone();
+
+        if (m_vdSyncEnabled)
+        {
+            option = firstSyncDone ? Option::VDSYNC : Option::VDFIRST;
+        }
+
+        return m_spSyncProtocolVD.get();
+    }
+
+    if (!m_spSyncProtocol)
+    {
+        return nullptr;
+    }
+
+    return m_spSyncProtocol.get();
+}
+
+bool Syscollector::performTableFullSync(const std::string& tableName, std::string& errorMessage)
+{
+    const auto indexIt = INDEX_MAP.find(tableName);
+
+    if (indexIt == INDEX_MAP.end())
+    {
+        errorMessage = "Unknown syscollector table for full synchronization: " + tableName;
+
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, errorMessage);
+        }
+
+        return false;
+    }
+
+    const auto& index = indexIt->second;
+    Option option = Option::SYNC;
+    bool isVdProtocol = false;
+    bool firstSyncDone = false;
+    auto* syncProtocol = getSyncProtocolForIndex(index, option, isVdProtocol, firstSyncDone);
+
+    if (!syncProtocol)
+    {
+        errorMessage = "Synchronization protocol is not initialized for index " + index;
+
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, errorMessage);
+        }
+
+        return false;
+    }
+
+    std::vector<nlohmann::json> items;
+    std::string rowFilterClause;
+
+    try
+    {
+        const auto documentLimitIt = m_documentLimits.find(index);
+        const auto documentLimit = documentLimitIt != m_documentLimits.end() ? documentLimitIt->second : 0;
+
+        if (documentLimit > 0)
+        {
+            rowFilterClause = "WHERE sync=1";
+        }
+
+        const auto callback = [&items](ReturnTypeCallback result, const nlohmann::json & data)
+        {
+            if (result == ReturnTypeCallback::SELECTED)
+            {
+                items.push_back(data);
+            }
+        };
+
+        const auto selectQuery = SelectQuery::builder()
+                                 .table(tableName)
+                                 .columnList({"*"})
+                                 .rowFilter(rowFilterClause)
+                                 .build();
+
+        m_spDBSync->selectRows(selectQuery.query(), callback);
+    }
+    catch (const std::exception& ex)
+    {
+        errorMessage = "Failed to retrieve elements from " + tableName + " for full synchronization: " + std::string(ex.what());
+
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, errorMessage);
+        }
+
+        return false;
+    }
+
+    syncProtocol->clearInMemoryData();
+
+    size_t persistedItems = 0;
+
+    for (const auto& item : items)
+    {
+        auto [newData, version] = ecsData(item, tableName);
+        const auto statefulToSend {newData.dump()};
+        const auto validationContext = std::string {"full synchronization event, table: "} + tableName;
+
+        if (!validateSchemaAndLog(statefulToSend, index, validationContext))
+        {
+            if (m_logFunction)
+            {
+                m_logFunction(LOG_WARNING, "Skipping invalid full synchronization item from table " + tableName);
+            }
+
+            continue;
+        }
+
+        syncProtocol->persistDifferenceInMemory(
+            calculateHashId(item, tableName),
+            Operation::CREATE,
+            index,
+            statefulToSend,
+            version);
+        persistedItems++;
+    }
+
+    bool success = false;
+
+    try
+    {
+        if (items.empty())
+        {
+            if (m_logFunction)
+            {
+                m_logFunction(LOG_INFO,
+                              "No local items found for table " + tableName +
+                                  "; requesting manager-side cleanup for authoritative full synchronization.");
+            }
+
+            success = syncProtocol->notifyDataClean({index}, option);
+        }
+        else
+        {
+            if (persistedItems == 0)
+            {
+                errorMessage = "No valid items available for full synchronization in table " + tableName;
+
+                if (m_logFunction)
+                {
+                    m_logFunction(LOG_ERROR, errorMessage);
+                }
+
+                return false;
+            }
+
+            if (m_logFunction)
+            {
+                m_logFunction(LOG_DEBUG,
+                              "Persisted " + std::to_string(persistedItems) +
+                                  " full synchronization items in memory for table " + tableName);
+            }
+
+            success = syncProtocol->synchronizeModule(Mode::FULL, option);
+        }
+    }
+    catch (const std::exception& ex)
+    {
+        errorMessage = "Full synchronization failed for " + tableName + ": " + std::string(ex.what());
+
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, errorMessage);
+        }
+
+        return false;
+    }
+
+    if (isVdProtocol)
+    {
+        createVDFirstSyncFlagIfNeeded(success, firstSyncDone);
+    }
+
+    if (!success && errorMessage.empty())
+    {
+        errorMessage = items.empty()
+                         ? "Full synchronization cleanup failed for table " + tableName
+                         : "Full synchronization failed for table " + tableName;
+    }
+
+    return success;
+}
+
 void Syscollector::scan()
 {
     if (m_stopping.load())
@@ -3508,6 +3744,28 @@ std::string Syscollector::query(const std::string& jsonQuery)
                 }
             }
         }
+        else if (command == "scan_runtime_java_and_full_sync")
+        {
+            std::string errorMessage;
+            fillRuntimeJavaResponse(command);
+            response["data"]["flush_scope"] = "runtime_java_inventory";
+            response["data"]["sync_mode"] = "full";
+
+            if (runOnDemandRuntimeJavaFullSync(errorMessage))
+            {
+                response["error"] = MQ_SUCCESS;
+                response["message"] = "Runtime Java inventory scan completed and full sync finished";
+                response["data"]["scan"] = "completed";
+                response["data"]["flush"] = "not_requested";
+            }
+            else
+            {
+                response["error"] = MQ_ERR_INTERNAL;
+                response["message"] = errorMessage;
+                response["data"]["scan"] = "error";
+                response["data"]["flush"] = "not_requested";
+            }
+        }
         else
         {
             response["error"] = MQ_ERR_UNKNOWN_COMMAND;
@@ -4560,11 +4818,21 @@ bool Syscollector::checkIfFullSyncRequired(const std::string& tableName)
 
     m_logFunction(LOG_DEBUG, "Success! Final file table checksum is: " + std::string(final_checksum));
 
-    bool needs_full_sync;
-    needs_full_sync = m_spSyncProtocol->requiresFullSync(
-                          INDEX_MAP.at(tableName),
-                          final_checksum
-                      );
+    Option option = Option::SYNC;
+    bool isVdProtocol = false;
+    bool firstSyncDone = false;
+    auto* syncProtocol = getSyncProtocolForIndex(INDEX_MAP.at(tableName), option, isVdProtocol, firstSyncDone);
+
+    if (!syncProtocol)
+    {
+        m_logFunction(LOG_ERROR, "Synchronization protocol not initialized for index " + INDEX_MAP.at(tableName));
+        return false;
+    }
+
+    bool needs_full_sync = syncProtocol->requiresFullSync(
+                               INDEX_MAP.at(tableName),
+                               final_checksum
+                           );
 
     if (needs_full_sync)
     {
@@ -4731,6 +4999,8 @@ void Syscollector::runRecoveryProcess()
 
         if (tableName == BROWSER_EXTENSIONS_TABLE && !m_browserExtensions) continue;
 
+        if (tableName == RUNTIME_JAVA_COMPONENTS_TABLE && !m_runtimeJavaInventory) continue;
+
         // LCOV_EXCL_START
         // Recovery process requires manager integration for checksum validation.
         if (recoveryIntervalHasEllapsed(tableName, m_integrityIntervalValue))
@@ -4750,86 +5020,8 @@ void Syscollector::runRecoveryProcess()
                     return;
                 }
 
-                std::vector<nlohmann::json> items;
-
-                // Determine if we need to filter by sync=1
-                // Only filter when document limits are configured (limit > 0)
-                // If limit == 0 (unlimited), recover all items without filtering
-                size_t documentLimit = m_documentLimits[index];
-                std::string rowFilterClause;
-
-                try
-                {
-                    if (documentLimit > 0)
-                    {
-                        // With limits: only recover items with sync=1
-                        // Items with sync=0 exceeded the document limit and should not be recovered
-                        rowFilterClause = "WHERE sync=1";
-                    }
-                    else
-                    {
-                        // No limits: recover all items regardless of sync value
-                        rowFilterClause = "";
-                    }
-
-                    auto callback = [&items](ReturnTypeCallback result, const nlohmann::json & data)
-                    {
-                        if (result == ReturnTypeCallback::SELECTED)
-                        {
-                            items.push_back(data);
-                        }
-                    };
-
-                    auto selectQuery = SelectQuery::builder()
-                                       .table(tableName)
-                                       .columnList({"*"})
-                                       .rowFilter(rowFilterClause)
-                                       .build();
-
-                    m_spDBSync->selectRows(selectQuery.query(), callback);
-                }
-                catch (const std::exception& ex)
-                {
-                    m_logFunction(LOG_ERROR, "Failed to retrieve elements from " + tableName);
-                    return;
-                }
-
-                m_spSyncProtocol->clearInMemoryData();
-
-                for (const auto& item : items)
-                {
-                    // Build stateful event
-                    auto [newData, version] = ecsData(item, tableName);
-                    const auto statefulToSend{newData.dump()};
-
-                    // Validate stateful event before persisting for recovery
-                    bool shouldPersist = true;
-                    std::string context = "recovery event, table: " + tableName;
-
-                    // Use helper function to validate and log
-                    bool validationPassed = validateSchemaAndLog(statefulToSend, index, context);
-
-                    if (!validationPassed)
-                    {
-                        m_logFunction(LOG_DEBUG, "Skipping persistence of invalid recovery event");
-                        shouldPersist = false;
-                    }
-
-                    if (shouldPersist)
-                    {
-                        m_spSyncProtocol->persistDifferenceInMemory(
-                            calculateHashId(item, tableName),
-                            Operation::CREATE,
-                            index,
-                            statefulToSend,
-                            item["version"].get<uint64_t>()
-                        );
-                    }
-                }
-
-                m_logFunction(LOG_DEBUG, "Persisted " + std::to_string(items.size()) + " recovery items in memory");
-                m_logFunction(LOG_DEBUG, "Starting recovery synchronization...");
-                bool success = syncModule(Mode::FULL);
+                std::string fullSyncError;
+                const bool success = performTableFullSync(tableName, fullSyncError);
 
                 if (success)
                 {
@@ -4837,7 +5029,9 @@ void Syscollector::runRecoveryProcess()
                 }
                 else
                 {
-                    m_logFunction(LOG_DEBUG, "Recovery synchronization failed, will retry later");
+                    m_logFunction(LOG_DEBUG,
+                                  "Recovery synchronization failed, will retry later: " +
+                                      (fullSyncError.empty() ? std::string {"unknown error"} : fullSyncError));
                 }
 
             }

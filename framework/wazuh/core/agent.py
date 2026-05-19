@@ -1493,6 +1493,15 @@ def send_runtime_java_rescan_command(agent_id: str = '') -> dict:
     )
 
 
+def send_runtime_java_full_resync_command(agent_id: str = '') -> dict:
+    """向 agent-info 模块发送 runtime-java 全量回灌命令。"""
+    return send_wmodules_query_command(
+        agent_id=agent_id,
+        module_name='agent-info',
+        command={'command': 'resync_runtime_java_full'}
+    )
+
+
 def get_runtime_java_rescan_status_command(agent_id: str = '') -> dict:
     """向 agent-info 模块查询最近一次 runtime-java 复扫状态。"""
     return send_wmodules_query_command(

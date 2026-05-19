@@ -203,6 +203,7 @@ class EXPORTED Syscollector final
         void scanBrowserExtensions();
         void scanRuntimeJavaComponents();
         bool runOnDemandRuntimeJavaScan(std::string& errorMessage);
+        bool runOnDemandRuntimeJavaFullSync(std::string& errorMessage);
         void scan();
         void syncLoop(std::unique_lock<std::mutex>& scan_lock);
         bool pause();
@@ -236,6 +237,11 @@ class EXPORTED Syscollector final
          * @returns true if a full sync is required, false if a delta sync is sufficient
          */
         bool checkIfFullSyncRequired(const std::string& tableName);
+        bool performTableFullSync(const std::string& tableName, std::string& errorMessage);
+        IAgentSyncProtocol* getSyncProtocolForIndex(const std::string& index,
+                                                    Option& option,
+                                                    bool& isVdProtocol,
+                                                    bool& firstSyncDone);
 
         /**
          * @brief Get a metadata value from table_metadata.

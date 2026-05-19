@@ -148,6 +148,7 @@ AgentInfoImpl::AgentInfoImpl(std::string dbPath,
 
     m_runtimeJavaRescanState["status"] = "never_run";
     m_runtimeJavaRescanState["result"] = "never_run";
+    m_runtimeJavaRescanState["action"] = "rescan_runtime_java";
     m_runtimeJavaRescanState["collector"] = "runtime_java";
     m_runtimeJavaRescanState["target_module"] = SYSCOLLECTOR_WM_NAME;
     m_runtimeJavaRescanState["target_command"] = "scan_runtime_java_and_flush";
@@ -1015,6 +1016,10 @@ std::string AgentInfoImpl::query(const std::string& jsonQuery)
         {
             return runRuntimeJavaRescan().dump();
         }
+        else if (command == "resync_runtime_java_full")
+        {
+            return runRuntimeJavaFullResync().dump();
+        }
         else if (command == "get_runtime_java_rescan_status")
         {
             response["error"] = MQ_SUCCESS;
@@ -1052,6 +1057,11 @@ nlohmann::json AgentInfoImpl::buildRuntimeJavaRescanStatusJson() const
     if (!status.contains("result"))
     {
         status["result"] = "never_run";
+    }
+
+    if (!status.contains("action"))
+    {
+        status["action"] = "rescan_runtime_java";
     }
 
     if (!status.contains("collector"))
@@ -1104,12 +1114,33 @@ nlohmann::json AgentInfoImpl::buildRuntimeJavaRescanStatusJson() const
 
 nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
 {
+    return runRuntimeJavaControlAction("rescan_runtime_java", "scan_runtime_java_and_flush", true);
+}
+
+nlohmann::json AgentInfoImpl::runRuntimeJavaFullResync()
+{
+    return runRuntimeJavaControlAction("resync_runtime_java_full", "scan_runtime_java_and_full_sync", false);
+}
+
+nlohmann::json AgentInfoImpl::runRuntimeJavaControlAction(const std::string& action,
+                                                          const std::string& targetCommand,
+                                                          const bool waitForFlushCompletion)
+{
+    const bool isFullResync = (action == "resync_runtime_java_full");
+    const std::string triggerFailureMessage = isFullResync
+                                                ? "Failed to trigger runtime Java full resync through syscollector"
+                                                : "Failed to trigger runtime Java rescan through syscollector";
+    const std::string partialErrorMessage = "Runtime Java rescan completed locally, but immediate delivery did not complete successfully";
+    const std::string successMessage = isFullResync
+                                         ? "Runtime Java full resync completed successfully"
+                                         : "Runtime Java rescan completed successfully";
+
     nlohmann::json response;
     response["data"]["module"] = AGENT_INFO_WM_NAME;
-    response["data"]["action"] = "rescan_runtime_java";
+    response["data"]["action"] = action;
     response["data"]["collector"] = "runtime_java";
     response["data"]["target_module"] = SYSCOLLECTOR_WM_NAME;
-    response["data"]["target_command"] = "scan_runtime_java_and_flush";
+    response["data"]["target_command"] = targetCommand;
 
     const auto requestId = std::to_string(std::chrono::duration_cast<std::chrono::nanoseconds>(
                                              std::chrono::system_clock::now().time_since_epoch())
@@ -1121,9 +1152,10 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
         m_runtimeJavaRescanState = {
             {"status", "running"},
             {"result", "running"},
+            {"action", action},
             {"collector", "runtime_java"},
             {"target_module", SYSCOLLECTOR_WM_NAME},
-            {"target_command", "scan_runtime_java_and_flush"},
+            {"target_command", targetCommand},
             {"scan_status", "running"},
             {"delivery_status", "pending"},
             {"request_id", requestId},
@@ -1162,7 +1194,7 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
         return response;
     }
 
-    const auto scanResponse = queryModuleWithRetry(SYSCOLLECTOR_WM_NAME, createJsonCommand("scan_runtime_java_and_flush"));
+    const auto scanResponse = queryModuleWithRetry(SYSCOLLECTOR_WM_NAME, createJsonCommand(targetCommand));
 
     try
     {
@@ -1188,7 +1220,7 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
         }
 
         response["error"] = MQ_ERR_INTERNAL;
-        response["message"] = "Failed to trigger runtime Java rescan through syscollector";
+        response["message"] = triggerFailureMessage;
         response["data"]["status"] = "completed";
         response["data"]["result"] = "error";
         response["data"]["scan_status"] = "error";
@@ -1198,10 +1230,9 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
         return response;
     }
 
-    if (!pollFlushCompletion({SYSCOLLECTOR_WM_NAME}))
+    if (waitForFlushCompletion && !pollFlushCompletion({SYSCOLLECTOR_WM_NAME}))
     {
         const auto finishedAt = Utils::getCurrentISO8601();
-        const std::string errorMessage = "Runtime Java rescan completed locally, but immediate delivery did not complete successfully";
 
         {
             std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
@@ -1210,17 +1241,17 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
             m_runtimeJavaRescanState["scan_status"] = "completed";
             m_runtimeJavaRescanState["delivery_status"] = "error";
             m_runtimeJavaRescanState["finished_at"] = finishedAt;
-            m_runtimeJavaRescanState["last_error"] = errorMessage;
+            m_runtimeJavaRescanState["last_error"] = partialErrorMessage;
         }
 
         response["error"] = MQ_SUCCESS;
-        response["message"] = errorMessage;
+        response["message"] = partialErrorMessage;
         response["data"]["status"] = "completed";
         response["data"]["result"] = "partial_success";
         response["data"]["scan_status"] = "completed";
         response["data"]["delivery_status"] = "error";
         response["data"]["finished_at"] = finishedAt;
-        response["data"]["last_error"] = errorMessage;
+        response["data"]["last_error"] = partialErrorMessage;
         return response;
     }
 
@@ -1237,7 +1268,7 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
     }
 
     response["error"] = MQ_SUCCESS;
-    response["message"] = "Runtime Java rescan completed successfully";
+    response["message"] = successMessage;
     response["data"]["status"] = "completed";
     response["data"]["result"] = "success";
     response["data"]["scan_status"] = "completed";

@@ -11,8 +11,9 @@ from wazuh.core import common, configuration
 from wazuh.core.InputValidator import InputValidator
 from wazuh.core.agent import WazuhDBQueryAgents, WazuhDBQueryGroupByAgents, Agent, \
     WazuhDBQueryGroup, create_upgrade_tasks, get_agents_info, get_groups, get_rbac_filters, send_restart_command, \
-    send_reload_command, send_runtime_java_rescan_command, get_runtime_java_rescan_status_command, \
-    GROUP_FIELDS, GROUP_REQUIRED_FIELDS, GROUP_FILES_FIELDS, GROUP_FILES_REQUIRED_FIELDS
+    send_reload_command, send_runtime_java_rescan_command, send_runtime_java_full_resync_command, \
+    get_runtime_java_rescan_status_command, GROUP_FIELDS, GROUP_REQUIRED_FIELDS, GROUP_FILES_FIELDS, \
+    GROUP_FILES_REQUIRED_FIELDS
 from wazuh.core.wdb_http import get_wdb_http_client
 from wazuh.core.cluster.cluster import get_node
 from wazuh.core.exception import WazuhError, WazuhInternalError, WazuhException, WazuhResourceNotFound
@@ -490,14 +491,14 @@ def _has_runtime_java_rescan_state_advanced(previous: dict, current: dict) -> bo
     return previous.get('status') != current.get('status')
 
 
-def _build_runtime_java_accepted_response(status_response: dict) -> dict:
+def _build_runtime_java_accepted_response(status_response: dict, message: str) -> dict:
     """构造“请求已受理，完成状态需后查”的统一返回。"""
     response_data = status_response.get('data', {}).copy()
     response_data['delivery'] = 'async_status_poll_required'
 
     return {
         'error': 0,
-        'message': 'Runtime Java rescan request accepted; completion status must be queried asynchronously',
+        'message': message,
         'data': response_data
     }
 
@@ -520,17 +521,17 @@ def _normalize_agent_list_input(args: tuple, agent_list: list = None) -> list:
     return [agent_id for agent_id in requested if agent_id in agent_list]
 
 
-@expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
-                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764]},
-                  post_proc_func=async_list_handler)
-async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
-    """主动触发一组 agent 执行 runtime-java 复扫。"""
-    result = AffectedItemsWazuhResult(all_msg='Runtime Java rescan command was sent to all agents',
-                                      some_msg='Runtime Java rescan command was not sent to some agents',
-                                      none_msg='Runtime Java rescan command was not sent to any agent'
-                                      )
+async def _execute_runtime_java_control(*args,
+                                        agent_list: list = None,
+                                        send_command=None,
+                                        all_msg: str = '',
+                                        some_msg: str = '',
+                                        none_msg: str = '',
+                                        accepted_message: str = '') -> AffectedItemsWazuhResult:
+    """执行 runtime-java 远程控制命令，并在 remoted timeout 时尝试状态恢复。"""
+    result = AffectedItemsWazuhResult(all_msg=all_msg, some_msg=some_msg, none_msg=none_msg)
     agent_list = _normalize_agent_list_input(args, agent_list)
-    agent_list = set(agent_list)
+    agent_list = set(agent_list or [])
 
     if agent_list:
         system_agents, active_agents = await _get_active_remote_control_agents(agent_list)
@@ -549,7 +550,6 @@ async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWa
                 result.add_failed_item(id_=agent_id, error=WazuhError(1762))
                 continue
 
-            previous_status_response = None
             previous_status = {}
 
             try:
@@ -559,7 +559,7 @@ async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWa
                 previous_status = {}
 
             try:
-                response = send_runtime_java_rescan_command(agent_id)
+                response = send_command(agent_id)
                 if response.get('error', 1) != 0:
                     raise WazuhError(1764, extra_message=f"Agent {agent_id}: {response.get('message', 'Unknown error')}")
 
@@ -573,7 +573,7 @@ async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWa
                         current_status = _extract_runtime_java_rescan_state(current_status_response)
 
                         if _has_runtime_java_rescan_state_advanced(previous_status, current_status):
-                            recovered = _build_runtime_java_accepted_response(current_status_response)
+                            recovered = _build_runtime_java_accepted_response(current_status_response, accepted_message)
                     except WazuhException:
                         recovered = None
 
@@ -586,6 +586,22 @@ async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWa
         result.affected_items.sort(key=operator.itemgetter('agent'))
 
     return result
+
+
+@expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764]},
+                  post_proc_func=async_list_handler)
+async def rescan_runtime_java(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
+    """主动触发一组 agent 执行 runtime-java 复扫。"""
+    return await _execute_runtime_java_control(
+        *args,
+        agent_list=agent_list,
+        send_command=send_runtime_java_rescan_command,
+        all_msg='Runtime Java rescan command was sent to all agents',
+        some_msg='Runtime Java rescan command was not sent to some agents',
+        none_msg='Runtime Java rescan command was not sent to any agent',
+        accepted_message='Runtime Java rescan request accepted; completion status must be queried asynchronously'
+    )
 
 
 @expose_resources(actions=['cluster:read', 'agent:rescan'], resources=[f'node:id:{node_id}', 'agent:id:{agent_list}'],
@@ -604,6 +620,40 @@ async def rescan_runtime_java_by_group(*args, agent_list: list = None) -> Affect
     """按分组触发 agent 执行 runtime-java 复扫。"""
     agent_list = _normalize_agent_list_input(args, agent_list)
     return await rescan_runtime_java(agent_list=agent_list)
+
+
+@expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764]},
+                  post_proc_func=async_list_handler)
+async def resync_runtime_java_full(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
+    """主动触发一组 agent 执行 runtime-java 全量回灌同步。"""
+    return await _execute_runtime_java_control(
+        *args,
+        agent_list=agent_list,
+        send_command=send_runtime_java_full_resync_command,
+        all_msg='Runtime Java full resync command was sent to all agents',
+        some_msg='Runtime Java full resync command was not sent to some agents',
+        none_msg='Runtime Java full resync command was not sent to any agent',
+        accepted_message='Runtime Java full resync request accepted; completion status must be queried asynchronously'
+    )
+
+
+@expose_resources(actions=['cluster:read', 'agent:rescan'], resources=[f'node:id:{node_id}', 'agent:id:{agent_list}'],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764], 'force': True},
+                  post_proc_func=async_list_handler)
+async def resync_runtime_java_full_by_node(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
+    """按节点触发 agent 执行 runtime-java 全量回灌同步。"""
+    agent_list = _normalize_agent_list_input(args, agent_list)
+    return await resync_runtime_java_full(agent_list=agent_list)
+
+
+@expose_resources(actions=["agent:rescan"], resources=["agent:id:{agent_list}"],
+                  post_proc_kwargs={'exclude_codes': [1701, 1703, 1707, 1762, 1764], 'force': True},
+                  post_proc_func=async_list_handler)
+async def resync_runtime_java_full_by_group(*args, agent_list: list = None) -> AffectedItemsWazuhResult:
+    """按分组触发 agent 执行 runtime-java 全量回灌同步。"""
+    agent_list = _normalize_agent_list_input(args, agent_list)
+    return await resync_runtime_java_full(agent_list=agent_list)
 
 
 @expose_resources(actions=["agent:read"], resources=["agent:id:{agent_list}"],

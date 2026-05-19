@@ -307,6 +307,58 @@ TEST_F(AgentInfoCoordinationTest, QueryGetRuntimeJavaRescanStatusReturnsLatestSt
     EXPECT_TRUE(statusResponse["data"]["rescan"].contains("finished_at"));
 }
 
+TEST_F(AgentInfoCoordinationTest, QueryRuntimeJavaFullResyncReturnsLatestState)
+{
+    auto queryModuleFunc = [](const std::string& moduleName, const std::string& query, char** response) -> int
+    {
+        EXPECT_EQ(moduleName, "syscollector");
+
+        if (response)
+        {
+            const auto queryJson = nlohmann::json::parse(query);
+            const auto command = queryJson["command"].get<std::string>();
+
+            if (command == "scan_runtime_java_and_full_sync")
+            {
+                *response = strdup(R"({"error":0,"message":"Runtime Java inventory scan completed and full sync finished","data":{"module":"syscollector","collector":"runtime_java","action":"scan_runtime_java_and_full_sync","scan":"completed","flush":"not_requested","sync_mode":"full"}})");
+            }
+            else
+            {
+                *response = strdup(R"({"error":1,"message":"Unexpected command"})");
+            }
+        }
+
+        return 0;
+    };
+
+    m_agentInfo = std::make_shared<AgentInfoImpl>(
+                      ":memory:",
+                      m_reportDiffFunc,
+                      m_logFunc,
+                      queryModuleFunc,
+                      m_mockDBSync,
+                      m_mockSysInfo,
+                      m_mockFileIO,
+                      m_mockFileSystem
+                  );
+
+    m_agentInfo->setFlushPollDelayMs(0);
+
+    const auto resyncResponse = nlohmann::json::parse(m_agentInfo->query(R"({"command":"resync_runtime_java_full"})"));
+    ASSERT_EQ(resyncResponse["error"], 0);
+    EXPECT_EQ(resyncResponse["data"]["action"], "resync_runtime_java_full");
+    EXPECT_EQ(resyncResponse["data"]["target_command"], "scan_runtime_java_and_full_sync");
+    EXPECT_EQ(resyncResponse["data"]["result"], "success");
+    EXPECT_EQ(resyncResponse["data"]["delivery_status"], "success");
+
+    const auto statusResponse = nlohmann::json::parse(m_agentInfo->query(R"({"command":"get_runtime_java_rescan_status"})"));
+    EXPECT_EQ(statusResponse["error"], 0);
+    EXPECT_EQ(statusResponse["data"]["rescan"]["action"], "resync_runtime_java_full");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["target_command"], "scan_runtime_java_and_full_sync");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["result"], "success");
+    EXPECT_EQ(statusResponse["data"]["rescan"]["delivery_status"], "success");
+}
+
 TEST_F(AgentInfoCoordinationTest, ResetSyncFlagSuccess)
 {
     // Setup mock DBSync expectations

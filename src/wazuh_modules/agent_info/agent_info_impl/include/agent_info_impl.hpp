@@ -200,6 +200,19 @@ class AgentInfoImpl
         /// @return 返回给查询调用方的 JSON 响应体
         nlohmann::json runRuntimeJavaRescan();
 
+        /// @brief 通过 syscollector 触发一次 runtime-java 全量回灌同步
+        /// @return 返回给查询调用方的 JSON 响应体
+        nlohmann::json runRuntimeJavaFullResync();
+
+        /// @brief 运行一次 runtime-java 控制动作并统一维护状态机
+        /// @param action 对外暴露的动作名
+        /// @param targetCommand 下发给 syscollector 的目标命令
+        /// @param waitForFlushCompletion 是否需要等待异步 flush 完成
+        /// @return 返回给查询调用方的 JSON 响应体
+        nlohmann::json runRuntimeJavaControlAction(const std::string& action,
+                                                   const std::string& targetCommand,
+                                                   bool waitForFlushCompletion);
+
         /// @brief 构造当前 runtime-java 复扫状态的 JSON 快照
         /// @return 当前状态快照
         nlohmann::json buildRuntimeJavaRescanStatusJson() const;

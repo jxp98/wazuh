@@ -1166,6 +1166,11 @@ def test_send_reload_command(mock_socket_cls, agent_id, mock_response, should_ra
         b'ok {"error":0,"message":"Runtime Java rescan completed","data":{"status":"completed"}}'
     ),
     (
+        send_runtime_java_full_resync_command,
+        '001 wmodules query agent-info {"command":"resync_runtime_java_full"}',
+        b'ok {"error":0,"message":"Runtime Java full resync completed","data":{"status":"completed"}}'
+    ),
+    (
         get_runtime_java_rescan_status_command,
         '001 wmodules query agent-info {"command":"get_runtime_java_rescan_status"}',
         b'{"error":0,"message":"Runtime Java rescan status retrieved","data":{"rescan":{"status":"never_run"}}}'
