@@ -287,6 +287,24 @@ bool AgentSyncProtocol::requiresFullSync(const std::string& index,
         return false; // Return false as this is not a checksum error from manager
     }
 
+    bool expected = false;
+
+    if (!m_syncInProgress.compare_exchange_strong(expected, true))
+    {
+        m_logger(LOG_DEBUG,
+                 "Synchronization already in progress, skipping concurrent integrity check for index: " + index);
+        return false;
+    }
+
+    struct SyncInProgressGuard
+    {
+        std::atomic<bool>& flag;
+        ~SyncInProgressGuard()
+        {
+            flag.store(false);
+        }
+    } syncGuard {m_syncInProgress};
+
     clearSyncState();
 
     // Step 1: Send Start message with mode ModuleCheck
@@ -358,6 +376,23 @@ bool AgentSyncProtocol::synchronizeMetadataOrGroups(Mode mode,
         return false;
     }
 
+    bool expected = false;
+
+    if (!m_syncInProgress.compare_exchange_strong(expected, true))
+    {
+        m_logger(LOG_DEBUG, "Synchronization already in progress, skipping concurrent metadata/groups request");
+        return false;
+    }
+
+    struct SyncInProgressGuard
+    {
+        std::atomic<bool>& flag;
+        ~SyncInProgressGuard()
+        {
+            flag.store(false);
+        }
+    } syncGuard {m_syncInProgress};
+
     clearSyncState();
 
     // For metadata and group modes, we don't send any data items
@@ -407,6 +442,23 @@ bool AgentSyncProtocol::notifyDataClean(const std::vector<std::string>& indices,
     {
         return false;
     }
+
+    bool expected = false;
+
+    if (!m_syncInProgress.compare_exchange_strong(expected, true))
+    {
+        m_logger(LOG_DEBUG, "Synchronization already in progress, skipping concurrent DataClean request");
+        return false;
+    }
+
+    struct SyncInProgressGuard
+    {
+        std::atomic<bool>& flag;
+        ~SyncInProgressGuard()
+        {
+            flag.store(false);
+        }
+    } syncGuard {m_syncInProgress};
 
     clearSyncState();
 

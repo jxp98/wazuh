@@ -79,6 +79,7 @@ class AgentSessionImpl final
     bool m_endReceived = false;         ///< Whether the END message has been received
     std::mutex m_mutex;                 ///< Mutex to guard shared state
     bool m_endEnqueued = false;         ///< Whether the END message has been enqueued
+    bool m_hasReceivedPayload = false;  ///< Whether any payload was received after StartAck
 
 public:
     explicit AgentSessionImpl(const uint64_t sessionId,
@@ -234,6 +235,7 @@ public:
         m_store.put(std::format("{}_{}", session, seq),
                     rocksdb::Slice(reinterpret_cast<const char*>(dataRaw), dataSize));
 
+        m_hasReceivedPayload = true;
         m_gapSet->observe(data->seq());
 
         logDebug2(LOGGER_DEFAULT_TAG,
@@ -279,6 +281,8 @@ public:
             m_context->checksumIndex = data->index()->str();
         }
 
+        m_hasReceivedPayload = true;
+
         logDebug2(LOGGER_DEFAULT_TAG,
                   "ChecksumModule received for session %llu, index: %s, checksum: %s",
                   m_context->sessionId,
@@ -315,6 +319,7 @@ public:
         m_store.put(std::format("{}_{}_context", session, seq),
                     rocksdb::Slice(reinterpret_cast<const char*>(dataRaw), dataSize));
 
+        m_hasReceivedPayload = true;
         m_gapSet->observe(seq);
 
         logDebug2(LOGGER_DEFAULT_TAG,
@@ -376,6 +381,7 @@ public:
                      seq);
         }
 
+        m_hasReceivedPayload = true;
         m_gapSet->observe(seq);
 
         if (m_endReceived)
@@ -431,6 +437,12 @@ public:
     bool isAlive(const std::chrono::seconds timeout) const
     {
         return m_gapSet->lastUpdate() + timeout >= std::chrono::steady_clock::now();
+    }
+
+    bool hasReceivedPayload()
+    {
+        std::lock_guard lock(m_mutex);
+        return m_hasReceivedPayload;
     }
 
     /**

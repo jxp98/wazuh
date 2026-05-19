@@ -299,9 +299,13 @@ class InventorySyncFacadeImpl final
                 // Check session limit before creating new session
                 std::unique_lock lock(m_agentSessionsMutex);
 
-                // Clean up any stale session for this agent+module combination
-                // This handles agent restart or modulesd restart scenarios
-                cleanupStaleSessionForAgentModule(std::string(agentId), std::string(moduleName));
+                // If a live session already exists, either re-send the original StartAck
+                // for a handshake retry or reject the duplicate request without destroying
+                // the in-flight session state.
+                if (handleExistingSessionForAgentModule(std::string(agentId), std::string(moduleName)))
+                {
+                    return;
+                }
 
                 if (m_agentSessions.size() >= static_cast<size_t>(m_maxSessions))
                 {
@@ -1667,24 +1671,57 @@ private:
      * @param moduleName Module name
      *
      * This handles cases where agent or modulesd restarts, leaving orphaned sessions.
-     * When a new Start message arrives, we check if there's already a session for the
-     * same agent+module combination, and if so, clean it up before creating the new one.
+     * When a new Start message arrives, an already-active session can mean either:
+     * - the agent retried because it missed the original StartAck
+     * - the agent is trying to create a conflicting concurrent session
      *
      * Note: Caller must hold m_agentSessionsMutex write lock
      */
-    void cleanupStaleSessionForAgentModule(const std::string& agentId, const std::string& moduleName)
+    bool handleExistingSessionForAgentModule(const std::string& agentId, const std::string& moduleName)
     {
+        const auto sessionTimeout = std::chrono::seconds(DEFAULT_TIME * 2);
         std::vector<uint64_t> staleSessionsToRemove;
 
         // Find existing sessions for this agent+module combination
-        for (const auto& [existingSessionId, existingSession] : m_agentSessions)
+        for (auto& [existingSessionId, existingSession] : m_agentSessions)
         {
             const auto& existingContext = existingSession.getContext();
             if (existingContext->agentId == agentId && existingContext->moduleName == moduleName)
             {
+                if (existingSession.isAlive(sessionTimeout))
+                {
+                    if (!existingSession.hasReceivedPayload())
+                    {
+                        logInfo(LOGGER_DEFAULT_TAG,
+                                "Found active handshake-only session %llu for agent %s module %s - "
+                                "re-sending StartAck",
+                                existingSessionId,
+                                agentId.c_str(),
+                                moduleName.c_str());
+                        m_responseDispatcher->sendStartAck(Wazuh::SyncSchema::Status_Ok,
+                                                           existingContext->agentId,
+                                                           existingContext->sessionId,
+                                                           existingContext->moduleName);
+                    }
+                    else
+                    {
+                        logWarn(LOGGER_DEFAULT_TAG,
+                                "Found active session %llu for agent %s module %s with payload already received - "
+                                "rejecting duplicate Start",
+                                existingSessionId,
+                                agentId.c_str(),
+                                moduleName.c_str());
+                        m_responseDispatcher->sendStartAck(Wazuh::SyncSchema::Status_Error,
+                                                           existingContext->agentId,
+                                                           existingContext->sessionId,
+                                                           existingContext->moduleName);
+                    }
+
+                    return true;
+                }
+
                 logInfo(LOGGER_DEFAULT_TAG,
-                        "Found existing session %llu for agent %s module %s - "
-                        "cleaning up stale session",
+                        "Found timed-out session %llu for agent %s module %s - cleaning it up before creating a new session",
                         existingSessionId,
                         agentId.c_str(),
                         moduleName.c_str());
@@ -1717,6 +1754,8 @@ private:
                 m_agentSessions.erase(it);
             }
         }
+
+        return false;
     }
 
     std::string m_clusterName;

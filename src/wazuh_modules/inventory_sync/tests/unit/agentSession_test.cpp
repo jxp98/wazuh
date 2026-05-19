@@ -126,6 +126,49 @@ TEST_F(AgentSessionTest, Constructor_ValidAgentIdZero)
     AgentSessionForTest session(sessionId, start, mockStore, mockIndexerQueue, mockResponseDispatcher);
 }
 
+TEST_F(AgentSessionTest, HasReceivedPayloadIsFalseBeforeAnyPostStartMessage)
+{
+    auto startMsg = createStartMessage(1, "001", "test-agent", "4.0.0", "syscollector_vd");
+    builder.Finish(startMsg);
+    auto start = flatbuffers::GetRoot<Wazuh::SyncSchema::Start>(builder.GetBufferPointer());
+
+    EXPECT_CALL(mockResponseDispatcher, sendStartAck(Wazuh::SyncSchema::Status_Ok, _, _, _)).Times(1);
+
+    AgentSessionForTest session(sessionId, start, mockStore, mockIndexerQueue, mockResponseDispatcher);
+    EXPECT_FALSE(session.hasReceivedPayload());
+}
+
+TEST_F(AgentSessionTest, HasReceivedPayloadBecomesTrueAfterChecksumModule)
+{
+    auto startMsg = createStartMessage(1, "001", "test-agent", "4.0.0", "syscollector_vd");
+    builder.Finish(startMsg);
+    auto start = flatbuffers::GetRoot<Wazuh::SyncSchema::Start>(builder.GetBufferPointer());
+
+    EXPECT_CALL(mockResponseDispatcher, sendStartAck(Wazuh::SyncSchema::Status_Ok, _, _, _)).Times(1);
+
+    AgentSessionForTest session(sessionId, start, mockStore, mockIndexerQueue, mockResponseDispatcher);
+
+    flatbuffers::FlatBufferBuilder checksumBuilder;
+    auto indexOffset = checksumBuilder.CreateString("wazuh-states-inventory-runtime-java-components");
+    auto checksumOffset = checksumBuilder.CreateString("deadbeef");
+    Wazuh::SyncSchema::ChecksumModuleBuilder checksumModuleBuilder(checksumBuilder);
+    checksumModuleBuilder.add_session(sessionId);
+    checksumModuleBuilder.add_index(indexOffset);
+    checksumModuleBuilder.add_checksum(checksumOffset);
+    auto checksumMsg = checksumModuleBuilder.Finish();
+    checksumBuilder.Finish(Wazuh::SyncSchema::CreateMessage(
+        checksumBuilder,
+        Wazuh::SyncSchema::MessageType_ChecksumModule,
+        checksumMsg.Union()));
+
+    auto message = Wazuh::SyncSchema::GetMessage(checksumBuilder.GetBufferPointer());
+    auto checksumModule = message->content_as<Wazuh::SyncSchema::ChecksumModule>();
+    ASSERT_NE(checksumModule, nullptr);
+
+    session.handleChecksumModule(checksumModule);
+    EXPECT_TRUE(session.hasReceivedPayload());
+}
+
 TEST_F(AgentSessionTest, HandleData_Success)
 {
     auto startMsg = createStartMessage(1, "1");

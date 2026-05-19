@@ -5889,3 +5889,77 @@ TEST_F(AgentSyncProtocolTest, SynchronizeModuleConcurrentCallIsSkippedAndDoesNot
     // A fresh call with an empty queue must run to completion (not be skipped).
     EXPECT_TRUE(protocol->synchronizeModule(Mode::DELTA)) << "Post-sync call was skipped — m_syncInProgress was not reset after completion";
 }
+
+TEST_F(AgentSyncProtocolTest, RequiresFullSyncConcurrentCallIsSkippedAndDoesNotCorruptSession)
+{
+    MQ_Functions mqFuncs =
+    {
+        .start = [](const char*, short int, short int) { return 0; },
+        .send_binary = [](int, const void*, size_t, const char*, char)
+        {
+            return 0;
+        }
+    };
+    LoggerFunc testLogger = [](modules_log_level_t, const std::string&) {};
+    protocol = std::make_unique<AgentSyncProtocol>("test_module",
+                                                   std::nullopt,
+                                                   mqFuncs,
+                                                   testLogger,
+                                                   std::chrono::seconds(syncEndDelay),
+                                                   std::chrono::seconds(max_timeout),
+                                                   retries,
+                                                   maxEps,
+                                                   nullptr);
+
+    std::promise<bool> firstResult;
+    auto firstFuture = firstResult.get_future();
+    std::thread integrityThread([this, &firstResult]()
+    {
+        firstResult.set_value(protocol->requiresFullSync("wazuh-states-inventory-runtime-java-components",
+                                                         "abc123"));
+    });
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+
+    auto concurrentFuture = std::async(std::launch::async, [this]()
+    {
+        return protocol->requiresFullSync("wazuh-states-inventory-runtime-java-components", "abc123");
+    });
+
+    auto status = concurrentFuture.wait_for(std::chrono::seconds(2));
+    ASSERT_EQ(status, std::future_status::ready)
+        << "Concurrent integrity check did not return quickly — likely blocked inside requiresFullSync instead of being skipped";
+    EXPECT_FALSE(concurrentFuture.get())
+        << "Concurrent integrity check should be skipped and report no mismatch while another sync is in progress";
+
+    {
+        flatbuffers::FlatBufferBuilder builder;
+        Wazuh::SyncSchema::StartAckBuilder startAckBuilder(builder);
+        startAckBuilder.add_status(Wazuh::SyncSchema::Status::Ok);
+        startAckBuilder.add_session(session);
+        auto offset = startAckBuilder.Finish();
+        builder.Finish(Wazuh::SyncSchema::CreateMessage(
+            builder,
+            Wazuh::SyncSchema::MessageType::StartAck,
+            offset.Union()));
+        protocol->parseResponseBuffer(builder.GetBufferPointer(), builder.GetSize());
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+    {
+        flatbuffers::FlatBufferBuilder builder;
+        Wazuh::SyncSchema::EndAckBuilder endAckBuilder(builder);
+        endAckBuilder.add_status(Wazuh::SyncSchema::Status::Ok);
+        endAckBuilder.add_session(session);
+        auto offset = endAckBuilder.Finish();
+        builder.Finish(Wazuh::SyncSchema::CreateMessage(
+            builder,
+            Wazuh::SyncSchema::MessageType::EndAck,
+            offset.Union()));
+        protocol->parseResponseBuffer(builder.GetBufferPointer(), builder.GetSize());
+    }
+
+    integrityThread.join();
+
+    EXPECT_FALSE(firstFuture.get())
+        << "In-flight integrity check should complete normally and report no mismatch";
+}
