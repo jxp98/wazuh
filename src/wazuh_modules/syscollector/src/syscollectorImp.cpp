@@ -2114,11 +2114,11 @@ bool Syscollector::performTableFullSync(const std::string& tableName, std::strin
             }
         };
 
-        const auto selectQuery = SelectQuery::builder()
-                                 .table(tableName)
-                                 .columnList({"*"})
-                                 .rowFilter(rowFilterClause)
-                                 .build();
+        auto selectQuery = SelectQuery::builder()
+                           .table(tableName)
+                           .columnList({"*"})
+                           .rowFilter(rowFilterClause)
+                           .build();
 
         m_spDBSync->selectRows(selectQuery.query(), callback);
     }
