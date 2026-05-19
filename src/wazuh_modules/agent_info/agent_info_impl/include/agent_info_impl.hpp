@@ -208,10 +208,12 @@ class AgentInfoImpl
         /// @param action 对外暴露的动作名
         /// @param targetCommand 下发给 syscollector 的目标命令
         /// @param waitForFlushCompletion 是否需要等待异步 flush 完成
+        /// @param completionCommand 用于查询异步完成状态的 syscollector 命令
         /// @return 返回给查询调用方的 JSON 响应体
         nlohmann::json runRuntimeJavaControlAction(const std::string& action,
                                                    const std::string& targetCommand,
-                                                   bool waitForFlushCompletion);
+                                                   bool waitForFlushCompletion,
+                                                   const std::string& completionCommand = "is_flush_completed");
 
         /// @brief 构造当前 runtime-java 复扫状态的 JSON 快照
         /// @return 当前状态快照
@@ -226,10 +228,12 @@ class AgentInfoImpl
         /// @return true if pause completed successfully, false otherwise
         bool pollFimPauseCompletion(const std::string& moduleName);
 
-        /// @brief Poll all requested module flushes until completion.
+        /// @brief Poll all requested module operations until completion.
         /// @param pendingModules Set of modules with an accepted flush request.
-        /// @return true if all flushes completed successfully, false otherwise.
-        bool pollFlushCompletion(std::set<std::string> pendingModules);
+        /// @param completionCommand 用于查询完成状态的模块命令
+        /// @return true if all operations completed successfully, false otherwise.
+        bool pollFlushCompletion(std::set<std::string> pendingModules,
+                                 const std::string& completionCommand = "is_flush_completed");
 
         /// @brief Pause all coordination modules
         /// @param pausedModules Output parameter for successfully paused modules

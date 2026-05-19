@@ -477,6 +477,20 @@ Syscollector::Syscollector()
         }
     });
 
+    m_asyncRuntimeJavaFullSyncController = std::make_unique<Utils::AsyncFlushController>(
+                                             "Syscollector runtime Java full sync",
+                                             [this]()
+    {
+        return executeRuntimeJavaFullSync();
+    },
+    [this](modules_log_level_t level, const std::string & message)
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(level, message);
+        }
+    });
+
     // Initialize document limits to 0 (unlimited) for all indices
     for (const auto& [table, index] : INDEX_MAP)
     {
@@ -3235,6 +3249,71 @@ int Syscollector::flush()
     return m_asyncFlushController->startFlush() ? 0 : -1;
 }
 
+int Syscollector::startRuntimeJavaFullSync()
+{
+    if (!m_runtimeJavaInventory)
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, "Runtime Java inventory collector is disabled");
+        }
+
+        return -1;
+    }
+
+    if (m_stopping.load())
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, "Syscollector is stopping");
+        }
+
+        return -1;
+    }
+
+    if (m_paused.load())
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, "Syscollector module is paused");
+        }
+
+        return -1;
+    }
+
+    Option option = Option::SYNC;
+    bool isVdProtocol = false;
+    bool firstSyncDone = false;
+    auto* syncProtocol = getSyncProtocolForIndex(SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS,
+                                                 option,
+                                                 isVdProtocol,
+                                                 firstSyncDone);
+
+    if (!syncProtocol)
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR,
+                          "Synchronization protocol is not initialized for index " +
+                              std::string(SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS));
+        }
+
+        return -1;
+    }
+
+    if (!m_asyncRuntimeJavaFullSyncController)
+    {
+        if (m_logFunction)
+        {
+            m_logFunction(LOG_ERROR, "Syscollector async runtime Java full sync controller not initialized");
+        }
+
+        return -1;
+    }
+
+    return m_asyncRuntimeJavaFullSyncController->startFlush() ? 0 : -1;
+}
+
 int Syscollector::executeFlushSync()
 {
     if (m_logFunction)
@@ -3318,6 +3397,19 @@ int Syscollector::executeFlushSync()
     }
 
     return stopping ? 0 : -1;
+}
+
+int Syscollector::executeRuntimeJavaFullSync()
+{
+    std::string errorMessage;
+    const bool success = runOnDemandRuntimeJavaFullSync(errorMessage);
+
+    if (!success && m_logFunction && !errorMessage.empty())
+    {
+        m_logFunction(LOG_ERROR, errorMessage);
+    }
+
+    return success ? 0 : -1;
 }
 
 int Syscollector::getMaxVersion()
@@ -3582,6 +3674,30 @@ std::string Syscollector::query(const std::string& jsonQuery)
                 response["data"]["result"] = flushStatus.successful ? "success" : "error";
             }
         }
+        else if (command == "is_runtime_java_full_sync_completed")
+        {
+            const auto syncStatus = m_asyncRuntimeJavaFullSyncController
+                                        ? m_asyncRuntimeJavaFullSyncController->getFlushStatus()
+                                        : Utils::AsyncFlushController::FlushStatus {false, true};
+
+            response["error"] = MQ_SUCCESS;
+            response["data"]["module"] = "syscollector";
+            response["data"]["collector"] = "runtime_java";
+            response["data"]["action"] = "scan_runtime_java_and_full_sync";
+
+            if (syncStatus.running)
+            {
+                response["message"] = "Runtime Java full sync in progress";
+                response["data"]["status"] = "in_progress";
+            }
+            else
+            {
+                response["message"] = syncStatus.successful ? "Runtime Java full sync completed successfully"
+                                      : "Runtime Java full sync completed with error";
+                response["data"]["status"] = "completed";
+                response["data"]["result"] = syncStatus.successful ? "success" : "error";
+            }
+        }
         else if (command == "get_version")
         {
             int maxVersion = getMaxVersion();
@@ -3746,22 +3862,22 @@ std::string Syscollector::query(const std::string& jsonQuery)
         }
         else if (command == "scan_runtime_java_and_full_sync")
         {
-            std::string errorMessage;
             fillRuntimeJavaResponse(command);
             response["data"]["flush_scope"] = "runtime_java_inventory";
             response["data"]["sync_mode"] = "full";
 
-            if (runOnDemandRuntimeJavaFullSync(errorMessage))
+            if (startRuntimeJavaFullSync() == 0)
             {
                 response["error"] = MQ_SUCCESS;
-                response["message"] = "Runtime Java inventory scan completed and full sync finished";
-                response["data"]["scan"] = "completed";
+                response["message"] = "Runtime Java inventory scan and full sync requested";
+                response["data"]["scan"] = "requested";
+                response["data"]["result"] = "running";
                 response["data"]["flush"] = "not_requested";
             }
             else
             {
                 response["error"] = MQ_ERR_INTERNAL;
-                response["message"] = errorMessage;
+                response["message"] = "Failed to request runtime Java inventory full sync";
                 response["data"]["scan"] = "error";
                 response["data"]["flush"] = "not_requested";
             }

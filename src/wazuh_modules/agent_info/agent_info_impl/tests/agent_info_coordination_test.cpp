@@ -320,7 +320,11 @@ TEST_F(AgentInfoCoordinationTest, QueryRuntimeJavaFullResyncReturnsLatestState)
 
             if (command == "scan_runtime_java_and_full_sync")
             {
-                *response = strdup(R"({"error":0,"message":"Runtime Java inventory scan completed and full sync finished","data":{"module":"syscollector","collector":"runtime_java","action":"scan_runtime_java_and_full_sync","scan":"completed","flush":"not_requested","sync_mode":"full"}})");
+                *response = strdup(R"({"error":0,"message":"Runtime Java inventory scan and full sync requested","data":{"module":"syscollector","collector":"runtime_java","action":"scan_runtime_java_and_full_sync","scan":"requested","flush":"not_requested","sync_mode":"full","result":"running"}})");
+            }
+            else if (command == "is_runtime_java_full_sync_completed")
+            {
+                *response = strdup(R"({"error":0,"message":"Runtime Java full sync completed successfully","data":{"module":"syscollector","collector":"runtime_java","action":"scan_runtime_java_and_full_sync","status":"completed","result":"success"}})");
             }
             else
             {

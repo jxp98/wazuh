@@ -1119,18 +1119,24 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
 
 nlohmann::json AgentInfoImpl::runRuntimeJavaFullResync()
 {
-    return runRuntimeJavaControlAction("resync_runtime_java_full", "scan_runtime_java_and_full_sync", false);
+    return runRuntimeJavaControlAction("resync_runtime_java_full",
+                                       "scan_runtime_java_and_full_sync",
+                                       true,
+                                       "is_runtime_java_full_sync_completed");
 }
 
 nlohmann::json AgentInfoImpl::runRuntimeJavaControlAction(const std::string& action,
                                                           const std::string& targetCommand,
-                                                          const bool waitForFlushCompletion)
+                                                          const bool waitForFlushCompletion,
+                                                          const std::string& completionCommand)
 {
     const bool isFullResync = (action == "resync_runtime_java_full");
     const std::string triggerFailureMessage = isFullResync
                                                 ? "Failed to trigger runtime Java full resync through syscollector"
                                                 : "Failed to trigger runtime Java rescan through syscollector";
-    const std::string partialErrorMessage = "Runtime Java rescan completed locally, but immediate delivery did not complete successfully";
+    const std::string partialErrorMessage = isFullResync
+                                                ? "Runtime Java full resync did not complete successfully"
+                                                : "Runtime Java rescan completed locally, but immediate delivery did not complete successfully";
     const std::string successMessage = isFullResync
                                          ? "Runtime Java full resync completed successfully"
                                          : "Runtime Java rescan completed successfully";
@@ -1230,25 +1236,25 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaControlAction(const std::string& act
         return response;
     }
 
-    if (waitForFlushCompletion && !pollFlushCompletion({SYSCOLLECTOR_WM_NAME}))
+    if (waitForFlushCompletion && !pollFlushCompletion({SYSCOLLECTOR_WM_NAME}, completionCommand))
     {
         const auto finishedAt = Utils::getCurrentISO8601();
 
         {
             std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
             m_runtimeJavaRescanState["status"] = "completed";
-            m_runtimeJavaRescanState["result"] = "partial_success";
-            m_runtimeJavaRescanState["scan_status"] = "completed";
+            m_runtimeJavaRescanState["result"] = isFullResync ? "error" : "partial_success";
+            m_runtimeJavaRescanState["scan_status"] = isFullResync ? "error" : "completed";
             m_runtimeJavaRescanState["delivery_status"] = "error";
             m_runtimeJavaRescanState["finished_at"] = finishedAt;
             m_runtimeJavaRescanState["last_error"] = partialErrorMessage;
         }
 
-        response["error"] = MQ_SUCCESS;
+        response["error"] = isFullResync ? MQ_ERR_INTERNAL : MQ_SUCCESS;
         response["message"] = partialErrorMessage;
         response["data"]["status"] = "completed";
-        response["data"]["result"] = "partial_success";
-        response["data"]["scan_status"] = "completed";
+        response["data"]["result"] = isFullResync ? "error" : "partial_success";
+        response["data"]["scan_status"] = isFullResync ? "error" : "completed";
         response["data"]["delivery_status"] = "error";
         response["data"]["finished_at"] = finishedAt;
         response["data"]["last_error"] = partialErrorMessage;
@@ -1508,17 +1514,21 @@ bool AgentInfoImpl::pollFimPauseCompletion(const std::string& moduleName)
     return false;
 }
 
-bool AgentInfoImpl::pollFlushCompletion(std::set<std::string> pendingModules)
+bool AgentInfoImpl::pollFlushCompletion(std::set<std::string> pendingModules,
+                                        const std::string& completionCommand)
 {
     const int FLUSH_POLL_DELAY_MS = m_flushPollDelayMs > 0 ? m_flushPollDelayMs : 1;
     constexpr int LOG_PROGRESS_EVERY_N_ATTEMPTS = 6; // Log progress every 6 poll intervals
     std::map<std::string, int> attempts;
     bool anyFailed = false;
+    const bool isRuntimeJavaFullSync = (completionCommand == "is_runtime_java_full_sync_completed");
 
     for (const auto& moduleName : pendingModules)
     {
         attempts[moduleName] = 0;
-        m_logFunction(LOG_DEBUG_VERBOSE, "Polling " + moduleName + " for flush completion (async flush)");
+        m_logFunction(LOG_DEBUG_VERBOSE,
+                      "Polling " + moduleName + " for " +
+                          (isRuntimeJavaFullSync ? "runtime Java full sync" : "flush") + " completion");
     }
 
     while (!m_stopped && !pendingModules.empty())
@@ -1530,13 +1540,13 @@ bool AgentInfoImpl::pollFlushCompletion(std::set<std::string> pendingModules)
             auto& attempt = attempts[moduleName];
             attempt++;
 
-            std::string isFlushCompletedMessage = createJsonCommand("is_flush_completed");
+            std::string isFlushCompletedMessage = createJsonCommand(completionCommand);
             ModuleResponse pollResponse = queryModuleWithRetry(moduleName, isFlushCompletedMessage);
 
             if (!pollResponse.success)
             {
                 m_logFunction(LOG_WARNING,
-                              "Failed to poll flush status for " + moduleName + " (attempt " +
+                              "Failed to poll completion status for " + moduleName + " (attempt " +
                               std::to_string(attempt) + "), will retry...");
                 continue;
             }
@@ -1554,14 +1564,15 @@ bool AgentInfoImpl::pollFlushCompletion(std::set<std::string> pendingModules)
                         if (attempt % LOG_PROGRESS_EVERY_N_ATTEMPTS == 0)
                         {
                             m_logFunction(LOG_INFO,
-                                          "Waiting for " + moduleName + " module to complete synchronization (" +
+                                          "Waiting for " + moduleName + " module to complete " +
+                                              (isRuntimeJavaFullSync ? "runtime Java full sync" : "synchronization") + " (" +
                                           std::to_string(attempt * FLUSH_POLL_DELAY_MS / 1000) +
                                           " seconds elapsed)");
                         }
                         else
                         {
                             m_logFunction(LOG_DEBUG,
-                                          moduleName + " flush still in progress (attempt " +
+                                          moduleName + " completion still in progress (attempt " +
                                           std::to_string(attempt) + ")");
                         }
                     }
@@ -1571,16 +1582,18 @@ bool AgentInfoImpl::pollFlushCompletion(std::set<std::string> pendingModules)
                         bool flushSucceeded = (result == "success");
 
                         m_logFunction(LOG_INFO,
-                                      moduleName + " pending operations completed with result: " + result +
+                                      moduleName + " " +
+                                          (isRuntimeJavaFullSync ? "runtime Java full sync" : "pending operations") +
+                                          " completed with result: " + result +
                                       " (took " + std::to_string(attempt * FLUSH_POLL_DELAY_MS / 1000) +
                                       " seconds)");
 
                         if (!flushSucceeded)
                         {
-                            // Flush did not complete successfully. Modules are already resumed;
-                            // data will be retried in the next regular sync cycle. Continue
-                            // monitoring remaining modules rather than aborting early.
-                            m_logFunction(LOG_INFO, moduleName + " flush did not complete — data will be retried in the next sync cycle");
+                            m_logFunction(LOG_INFO,
+                                          moduleName + " " +
+                                              (isRuntimeJavaFullSync ? "runtime Java full sync did not complete"
+                                                                     : "flush did not complete — data will be retried in the next sync cycle"));
                             anyFailed = true;
                         }
 

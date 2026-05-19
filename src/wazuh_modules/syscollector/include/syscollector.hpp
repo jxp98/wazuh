@@ -209,7 +209,9 @@ class EXPORTED Syscollector final
         bool pause();
         void resume();
         int flush();
+        int startRuntimeJavaFullSync();
         int executeFlushSync();
+        int executeRuntimeJavaFullSync();
         int getMaxVersion();
         int setVersion(int version);
 
@@ -456,6 +458,7 @@ class EXPORTED Syscollector final
         std::vector<std::string>                                                 m_disabledCollectorsIndicesWithData;
         std::unique_ptr<IAgentSyncProtocol>                                      m_spSyncProtocolVD;
         std::unique_ptr<Utils::AsyncFlushController>                             m_asyncFlushController;
+        std::unique_ptr<Utils::AsyncFlushController>                             m_asyncRuntimeJavaFullSyncController;
         std::vector<std::pair<std::string, nlohmann::json>>*                     m_failedItems;  // Pointer to list of items that failed validation (for deferred deletion)
         std::vector<std::pair<std::string, nlohmann::json>>*                     m_itemsToUpdateSync;  // Pointer to list of items that passed limit check (for deferred sync=1 update)
 

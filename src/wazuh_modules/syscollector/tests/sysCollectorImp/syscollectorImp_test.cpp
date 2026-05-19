@@ -2934,6 +2934,34 @@ TEST_F(SyscollectorImpTest, queryCommandScanRuntimeJavaAndFullSyncWithoutSyncPro
     Syscollector::instance().destroy();
 }
 
+TEST_F(SyscollectorImpTest, queryCommandRuntimeJavaFullSyncStatusIdleIsCompletedSuccess)
+{
+    const auto spInfoWrapper{std::make_shared<MockSysInfo>()};
+    EXPECT_CALL(*spInfoWrapper, hardware()).Times(0);
+    EXPECT_CALL(*spInfoWrapper, os()).Times(0);
+
+    Syscollector::instance().init(spInfoWrapper,
+                                  reportFunction,
+                                  persistFunction,
+                                  logFunction,
+                                  SYSCOLLECTOR_DB_PATH,
+                                  "",
+                                  "",
+                                  3600, false, false, false, false, false, false, false, false, false, false, false, false, false, true);
+
+    const auto responseJson =
+        nlohmann::json::parse(Syscollector::instance().query(R"({"command":"is_runtime_java_full_sync_completed"})"));
+
+    EXPECT_EQ(responseJson["error"], MQ_SUCCESS);
+    EXPECT_EQ(responseJson["data"]["module"], "syscollector");
+    EXPECT_EQ(responseJson["data"]["collector"], "runtime_java");
+    EXPECT_EQ(responseJson["data"]["action"], "scan_runtime_java_and_full_sync");
+    EXPECT_EQ(responseJson["data"]["status"], "completed");
+    EXPECT_EQ(responseJson["data"]["result"], "success");
+
+    Syscollector::instance().destroy();
+}
+
 TEST_F(SyscollectorImpTest, queryCommandFlushReportsInProgressAndThenSuccess)
 {
     static std::atomic<bool> s_blockStart {false};
