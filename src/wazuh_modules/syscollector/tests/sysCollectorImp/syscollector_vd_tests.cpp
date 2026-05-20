@@ -562,6 +562,105 @@ TEST_F(SyscollectorVDTest, ParseResponseBufferVD_RoutesToVDProtocol)
     Syscollector::instance().destroy();
 }
 
+TEST_F(SyscollectorVDTest, ParseResponseBufferRuntimeJavaFullVD_WithSyncProtocol)
+{
+    const auto spInfoWrapper{std::make_shared<MockSysInfo>()};
+    EXPECT_CALL(*spInfoWrapper, hardware()).Times(0);
+    EXPECT_CALL(*spInfoWrapper, os()).Times(0);
+
+    Syscollector::instance().init(spInfoWrapper,
+                                  reportFunction,
+                                  persistFunction,
+                                  logFunction,
+                                  SYSCOLLECTOR_DB_PATH_VD,
+                                  "",
+                                  "",
+                                  3600,
+                                  false,
+                                  false,
+                                  true,
+                                  false,
+                                  true,
+                                  false,
+                                  false,
+                                  false,
+                                  true,
+                                  false,
+                                  false,
+                                  false,
+                                  false,
+                                  false);
+
+    MQ_Functions mqFuncs;
+    mqFuncs.start = [](const char*, short, short) -> int { return 0; };
+    mqFuncs.send_binary = [](int, const void*, size_t, const char*, char) -> int { return 0; };
+
+    EXPECT_NO_THROW(
+    {
+        Syscollector::instance().initSyncProtocol(
+            "syscollector",
+            ":memory:",
+            ":memory:",
+            mqFuncs,
+            std::chrono::seconds(10),
+            std::chrono::seconds(5),
+            3,
+            100,
+            86400
+        );
+    });
+
+    const uint8_t testData[] = {0x01, 0x02, 0x03, 0x04};
+    bool result = false;
+
+    EXPECT_NO_THROW(
+    {
+        result = Syscollector::instance().parseResponseBufferRuntimeJavaFullVD(testData, sizeof(testData));
+    });
+
+    (void)result;
+}
+
+TEST_F(SyscollectorVDTest, ParseResponseBufferRuntimeJavaFullVD_WithoutSyncProtocol)
+{
+    const auto spInfoWrapper{std::make_shared<MockSysInfo>()};
+    EXPECT_CALL(*spInfoWrapper, hardware()).Times(0);
+    EXPECT_CALL(*spInfoWrapper, os()).Times(0);
+
+    Syscollector::instance().init(spInfoWrapper,
+                                  reportFunction,
+                                  persistFunction,
+                                  logFunction,
+                                  SYSCOLLECTOR_DB_PATH_VD,
+                                  "",
+                                  "",
+                                  3600,
+                                  false,
+                                  false,
+                                  true,
+                                  false,
+                                  true,
+                                  false,
+                                  false,
+                                  false,
+                                  false,
+                                  false,
+                                  false,
+                                  false,
+                                  false,
+                                  false);
+
+    const uint8_t testData[] = {0x01, 0x02, 0x03, 0x04};
+    bool result = false;
+
+    EXPECT_NO_THROW(
+    {
+        result = Syscollector::instance().parseResponseBufferRuntimeJavaFullVD(testData, sizeof(testData));
+    });
+
+    EXPECT_FALSE(result);
+}
+
 TEST_F(SyscollectorVDTest, ParseResponseBufferVD_WithoutSyncProtocol)
 {
     /**

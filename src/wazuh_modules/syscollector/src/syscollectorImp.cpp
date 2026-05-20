@@ -792,9 +792,19 @@ void Syscollector::destroy()
         m_spSyncProtocolVD->stop();
     }
 
+    if (m_spRuntimeJavaFullSyncProtocol)
+    {
+        m_spRuntimeJavaFullSyncProtocol->stop();
+    }
+
     if (m_asyncFlushController)
     {
         m_asyncFlushController->waitForFlushToFinish();
+    }
+
+    if (m_asyncRuntimeJavaFullSyncController)
+    {
+        m_asyncRuntimeJavaFullSyncController->waitForFlushToFinish();
     }
 
     if (!scanMutexAvailable)
@@ -814,6 +824,7 @@ void Syscollector::destroy()
     m_spNormalizer.reset();
     m_spSyncProtocol.reset();
     m_spSyncProtocolVD.reset();
+    m_spRuntimeJavaFullSyncProtocol.reset();
     m_spInfo.reset();
 }
 
@@ -2039,14 +2050,34 @@ bool Syscollector::runOnDemandRuntimeJavaFullSync(std::string& errorMessage)
 IAgentSyncProtocol* Syscollector::getSyncProtocolForIndex(const std::string& index,
                                                           Option& option,
                                                           bool& isVdProtocol,
-                                                          bool& firstSyncDone)
+                                                          bool& firstSyncDone,
+                                                          bool useRuntimeJavaFullSyncProtocol)
 {
+    const bool isRuntimeJavaIndex = index == SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS;
+
     isVdProtocol = (index == SYSCOLLECTOR_SYNC_INDEX_SYSTEM ||
                     index == SYSCOLLECTOR_SYNC_INDEX_PACKAGES ||
                     index == SYSCOLLECTOR_SYNC_INDEX_HOTFIXES ||
-                    index == SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS);
+                    isRuntimeJavaIndex);
     firstSyncDone = false;
     option = Option::SYNC;
+
+    if (isRuntimeJavaIndex && useRuntimeJavaFullSyncProtocol)
+    {
+        if (!m_spRuntimeJavaFullSyncProtocol)
+        {
+            return nullptr;
+        }
+
+        firstSyncDone = isVDFirstSyncDone();
+
+        if (m_vdSyncEnabled)
+        {
+            option = firstSyncDone ? Option::VDSYNC : Option::VDFIRST;
+        }
+
+        return m_spRuntimeJavaFullSyncProtocol.get();
+    }
 
     if (isVdProtocol)
     {
@@ -2093,7 +2124,11 @@ bool Syscollector::performTableFullSync(const std::string& tableName, std::strin
     Option option = Option::SYNC;
     bool isVdProtocol = false;
     bool firstSyncDone = false;
-    auto* syncProtocol = getSyncProtocolForIndex(index, option, isVdProtocol, firstSyncDone);
+    auto* syncProtocol = getSyncProtocolForIndex(index,
+                                                 option,
+                                                 isVdProtocol,
+                                                 firstSyncDone,
+                                                 tableName == RUNTIME_JAVA_COMPONENTS_TABLE);
 
     if (!syncProtocol)
     {
@@ -2633,6 +2668,11 @@ void Syscollector::initSyncProtocol(const std::string& moduleName, const std::st
         this->m_logFunction(level, moduleName + "_vd: " + msg);
     };
 
+    auto logger_func_runtime_java_full_vd = [this](modules_log_level_t level, const std::string & msg)
+    {
+        this->m_logFunction(level, std::string(SYSCOLLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_MODULE) + ": " + msg);
+    };
+
     try
     {
         // Initialize regular sync protocol
@@ -2643,6 +2683,12 @@ void Syscollector::initSyncProtocol(const std::string& moduleName, const std::st
         std::string vdModuleName = moduleName + "_vd";
         m_spSyncProtocolVD = std::make_unique<AgentSyncProtocol>(vdModuleName, syncDbPathVD, mqFuncs, logger_func_vd, syncEndDelay, timeout, retries, maxEps, nullptr);
         m_logFunction(LOG_DEBUG, "Syscollector VD sync protocol initialized successfully with database: " + syncDbPathVD + " and module name: " + vdModuleName);
+
+        const std::string runtimeJavaFullSyncDbPath = syncDbPathVD == ":memory:"
+                                                      ? syncDbPathVD
+                                                      : syncDbPathVD + ".runtime_java_full";
+        m_spRuntimeJavaFullSyncProtocol = std::make_unique<AgentSyncProtocol>(SYSCOLLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_MODULE, runtimeJavaFullSyncDbPath, mqFuncs, logger_func_runtime_java_full_vd, syncEndDelay, timeout, retries, maxEps, nullptr);
+        m_logFunction(LOG_DEBUG, "Syscollector runtime Java full VD sync protocol initialized successfully with database: " + runtimeJavaFullSyncDbPath + " and module name: " + std::string(SYSCOLLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_MODULE));
 
         // Initialize schema validator factory from embedded resources
         auto& validatorFactory = SchemaValidator::SchemaValidatorFactory::getInstance();
@@ -2781,10 +2827,19 @@ bool Syscollector::parseResponseBuffer(const uint8_t* data, size_t length)
 
 bool Syscollector::parseResponseBufferVD(const uint8_t* data, size_t length)
 {
-    // Route to VD sync protocol only
     if (m_spSyncProtocolVD)
     {
         return m_spSyncProtocolVD->parseResponseBuffer(data, length);
+    }
+
+    return false;
+}
+
+bool Syscollector::parseResponseBufferRuntimeJavaFullVD(const uint8_t* data, size_t length)
+{
+    if (m_spRuntimeJavaFullSyncProtocol)
+    {
+        return m_spRuntimeJavaFullSyncProtocol->parseResponseBuffer(data, length);
     }
 
     return false;
@@ -3181,6 +3236,11 @@ void Syscollector::deleteDatabase()
         m_spSyncProtocolVD->deleteDatabase();
     }
 
+    if (m_spRuntimeJavaFullSyncProtocol)
+    {
+        m_spRuntimeJavaFullSyncProtocol->deleteDatabase();
+    }
+
     if (m_spDBSync)
     {
         m_spDBSync->closeAndDeleteDatabase();
@@ -3287,7 +3347,8 @@ int Syscollector::startRuntimeJavaFullSync()
     auto* syncProtocol = getSyncProtocolForIndex(SYSCOLLECTOR_SYNC_INDEX_RUNTIME_JAVA_COMPONENTS,
                                                  option,
                                                  isVdProtocol,
-                                                 firstSyncDone);
+                                                 firstSyncDone,
+                                                 true);
 
     if (!syncProtocol)
     {

@@ -96,6 +96,7 @@ class EXPORTED Syscollector final
         void persistDifference(const std::string& id, Operation operation, const std::string& index, const std::string& data, uint64_t version, bool isDataContext = false);
         bool parseResponseBuffer(const uint8_t* data, size_t length);
         bool parseResponseBufferVD(const uint8_t* data, size_t length);
+        bool parseResponseBufferRuntimeJavaFullVD(const uint8_t* data, size_t length);
         bool notifyDataClean(const std::vector<std::string>& indices);
         void deleteDatabase();
         std::string query(const std::string& jsonQuery);
@@ -243,7 +244,8 @@ class EXPORTED Syscollector final
         IAgentSyncProtocol* getSyncProtocolForIndex(const std::string& index,
                                                     Option& option,
                                                     bool& isVdProtocol,
-                                                    bool& firstSyncDone);
+                                                    bool& firstSyncDone,
+                                                    bool useRuntimeJavaFullSyncProtocol = false);
 
         /**
          * @brief Get a metadata value from table_metadata.
@@ -457,6 +459,7 @@ class EXPORTED Syscollector final
         std::unique_ptr<IAgentSyncProtocol>                                      m_spSyncProtocol;
         std::vector<std::string>                                                 m_disabledCollectorsIndicesWithData;
         std::unique_ptr<IAgentSyncProtocol>                                      m_spSyncProtocolVD;
+        std::unique_ptr<IAgentSyncProtocol>                                      m_spRuntimeJavaFullSyncProtocol;
         std::unique_ptr<Utils::AsyncFlushController>                             m_asyncFlushController;
         std::unique_ptr<Utils::AsyncFlushController>                             m_asyncRuntimeJavaFullSyncController;
         std::vector<std::pair<std::string, nlohmann::json>>*                     m_failedItems;  // Pointer to list of items that failed validation (for deferred deletion)

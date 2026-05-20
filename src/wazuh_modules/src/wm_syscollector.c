@@ -9,6 +9,7 @@
  * Foundation.
  */
 #include <stdlib.h>
+#include <string.h>
 #include "wmodules_def.h"
 #include "syscollector.h"
 #include "wmodules.h"
@@ -81,12 +82,23 @@ syscollector_sync_module_func syscollector_sync_module_ptr = NULL;
 syscollector_persist_diff_func syscollector_persist_diff_ptr = NULL;
 syscollector_parse_response_func syscollector_parse_response_ptr = NULL;
 syscollector_parse_response_vd_func syscollector_parse_response_vd_ptr = NULL;
+syscollector_parse_response_runtime_java_full_vd_func syscollector_parse_response_runtime_java_full_vd_ptr = NULL;
 syscollector_notify_data_clean_func syscollector_notify_data_clean_ptr = NULL;
 syscollector_delete_database_func syscollector_delete_database_ptr = NULL;
 
 // Query function pointer
 typedef size_t (*syscollector_query_func)(const char* query, char** output);
 syscollector_query_func syscollector_query_ptr = NULL;
+
+static size_t wm_syscollector_sync_header_length(const char* command, size_t command_len) {
+    const char* header_end = memchr(command, ' ', command_len);
+
+    if (!header_end) {
+        return 0;
+    }
+
+    return (size_t)(header_end - command + 1);
+}
 
 typedef enum
 {
@@ -473,6 +485,7 @@ static void wm_handle_sys_disabled_and_notify_data_clean(wm_sys_t* sys)
         syscollector_init_sync_ptr = so_get_function_sym(syscollector_module, "syscollector_init_sync");
         syscollector_parse_response_ptr = so_get_function_sym(syscollector_module, "syscollector_parse_response");
         syscollector_parse_response_vd_ptr = so_get_function_sym(syscollector_module, "syscollector_parse_response_vd");
+        syscollector_parse_response_runtime_java_full_vd_ptr = so_get_function_sym(syscollector_module, "syscollector_parse_response_runtime_java_full_vd");
         syscollector_notify_data_clean_ptr = so_get_function_sym(syscollector_module, "syscollector_notify_data_clean");
         syscollector_delete_database_ptr = so_get_function_sym(syscollector_module, "syscollector_delete_database");
 
@@ -617,6 +630,7 @@ void* wm_sys_main(wm_sys_t* sys)
         syscollector_persist_diff_ptr = so_get_function_sym(syscollector_module, "syscollector_persist_diff");
         syscollector_parse_response_ptr = so_get_function_sym(syscollector_module, "syscollector_parse_response");
         syscollector_parse_response_vd_ptr = so_get_function_sym(syscollector_module, "syscollector_parse_response_vd");
+        syscollector_parse_response_runtime_java_full_vd_ptr = so_get_function_sym(syscollector_module, "syscollector_parse_response_runtime_java_full_vd");
 
         // Get query function pointer
         syscollector_query_ptr = so_get_function_sym(syscollector_module, "syscollector_query");
@@ -892,14 +906,34 @@ int wm_sync_message(const char* command, size_t command_len)
         const uint8_t* data;
         size_t data_len;
 
-        // Check if this is a VD message by looking for "_vd" in the command
-        if (strstr(command, "_vd") != NULL)
-        {
-            // Route to VD parser with VD-specific header length
-            header_len = strlen(SYSCOLECTOR_VD_SYNC_HEADER);
-            data = (const uint8_t*)(command + header_len);
-            data_len = command_len - header_len;
+        header_len = wm_syscollector_sync_header_length(command, command_len);
 
+        if (header_len == 0 || header_len >= command_len)
+        {
+            mtdebug1(WM_SYS_LOGTAG, "Invalid sync response header");
+            return -1;
+        }
+
+        data = (const uint8_t*)(command + header_len);
+        data_len = command_len - header_len;
+
+        if (command_len >= strlen(SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER) &&
+                memcmp(command, SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER, strlen(SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER)) == 0)
+        {
+            if (syscollector_parse_response_runtime_java_full_vd_ptr)
+            {
+                mtdebug2(WM_SYS_LOGTAG, "Routing message to runtime Java full VD parser");
+                ret = syscollector_parse_response_runtime_java_full_vd_ptr(data, data_len);
+            }
+            else
+            {
+                mtdebug1(WM_SYS_LOGTAG, "Runtime Java full VD parser function not available");
+                return -1;
+            }
+        }
+        else if (command_len >= strlen(SYSCOLECTOR_VD_SYNC_HEADER) &&
+                 memcmp(command, SYSCOLECTOR_VD_SYNC_HEADER, strlen("syscollector_vd")) == 0)
+        {
             if (syscollector_parse_response_vd_ptr)
             {
                 mtdebug2(WM_SYS_LOGTAG, "Routing message to VD parser");
@@ -913,11 +947,6 @@ int wm_sync_message(const char* command, size_t command_len)
         }
         else
         {
-            // Route to regular parser with regular header length
-            header_len = strlen(SYSCOLECTOR_SYNC_HEADER);
-            data = (const uint8_t*)(command + header_len);
-            data_len = command_len - header_len;
-
             if (syscollector_parse_response_ptr)
             {
                 mtdebug2(WM_SYS_LOGTAG, "Routing message to regular parser");
