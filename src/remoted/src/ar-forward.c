@@ -17,6 +17,25 @@
 #include "os_net.h"
 
 
+int ar_extract_sized_module_and_payload(char *raw_module_segment, char **module_name, char **payload_start)
+{
+    char *separator = NULL;
+
+    if (!raw_module_segment || !module_name || !payload_start) {
+        return -1;
+    }
+
+    *module_name = raw_module_segment;
+    separator = strchr(raw_module_segment, ' ');
+    if (!separator) {
+        return -1;
+    }
+
+    *separator = '\0';
+    *payload_start = separator + 1;
+    return 0;
+}
+
 /* Start of a new thread. Only returns on unrecoverable errors. */
 void *AR_Forward(__attribute__((unused)) void *arg)
 {
@@ -128,14 +147,10 @@ void *AR_Forward(__attribute__((unused)) void *arg)
                 tmp_str++;
 
                 /* Extract the module name */
-                module_name = tmp_str;
-                tmp_str = strchr(tmp_str, ' ');
-                if (!tmp_str) {
+                if (ar_extract_sized_module_and_payload(tmp_str, &module_name, &tmp_str) < 0) {
                     mwarn(EXECD_INV_MSG, msg);
                     continue;
                 }
-                *tmp_str = '\0';
-                tmp_str+=2;
 
             }
 
