@@ -115,7 +115,6 @@ int req_save(const char* counter, const char* buffer, size_t length);
 /* Must not call key_lock() before this */
 int send_msg(const char* agent_id, const char* msg, ssize_t msg_length);
 int send_msg_with_key_control(const char* agent_id, const char* msg, ssize_t msg_length, bool skip_key_lock);
-int ar_extract_sized_module_and_payload(char *raw_module_segment, char **module_name, char **payload_start);
 
 int check_keyupdate(void);
 

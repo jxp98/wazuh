@@ -17,7 +17,11 @@
 #include "os_net.h"
 
 
+#ifdef WAZUH_UNIT_TESTING
 int ar_extract_sized_module_and_payload(char *raw_module_segment, char **module_name, char **payload_start)
+#else
+static int ar_extract_sized_module_and_payload(char *raw_module_segment, char **module_name, char **payload_start)
+#endif
 {
     char *separator = NULL;
 

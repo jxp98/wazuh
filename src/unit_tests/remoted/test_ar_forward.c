@@ -19,6 +19,8 @@
 #include "shared.h"
 #include "remoted.h"
 
+int ar_extract_sized_module_and_payload(char *raw_module_segment, char **module_name, char **payload_start);
+
 static void test_ar_extract_sized_module_and_payload_keeps_first_payload_byte(void **state)
 {
     (void)state;
