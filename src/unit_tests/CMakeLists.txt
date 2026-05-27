@@ -200,21 +200,19 @@ else()
 endif()
 
 # Coverage
-find_program(LCOV_PATH lcov)
-if(NOT LCOV_PATH)
-  message(FATAL_ERROR "lcov not found! Aborting...")
-endif()
-
 find_program(GCOV_PATH gcov)
 if(NOT GCOV_PATH)
   message(FATAL_ERROR "gcov not found! Aborting...")
 endif()
 
+find_program(LCOV_PATH lcov)
 find_program(GENHTML_PATH genhtml)
-if(NOT GENHTML_PATH)
-  message(FATAL_ERROR "genhtml not found! Aborting...")
+
+if(NOT LCOV_PATH OR NOT GENHTML_PATH)
+  message(WARNING "lcov/genhtml not found. Coverage target will be disabled.")
 endif()
 
+if(LCOV_PATH AND GENHTML_PATH)
 add_custom_target(
   coverage
   # Cleanup lcov
@@ -250,3 +248,4 @@ add_custom_target(
   # Clean counters
   COMMAND ${CMAKE_COMMAND} -E remove coverage.base coverage.total
           coverage.info.cleaned)
+endif()

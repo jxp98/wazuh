@@ -296,6 +296,8 @@ void AgentInfoImpl::stop()
         m_spSyncProtocol->stop();
     }
 
+    joinRuntimeJavaRescanWorker();
+
     m_logFunction(LOG_INFO, "AgentInfo module stopped.");
 }
 
@@ -1119,6 +1121,34 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaRescan()
 
 nlohmann::json AgentInfoImpl::runRuntimeJavaFullResync()
 {
+    {
+        std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+
+        if (m_runtimeJavaRescanState.contains("action") &&
+            m_runtimeJavaRescanState["action"] == "resync_runtime_java_full" &&
+            m_runtimeJavaRescanState.contains("status") &&
+            m_runtimeJavaRescanState["status"] == "running")
+        {
+            nlohmann::json response;
+            response["error"] = MQ_SUCCESS;
+            response["message"] = "Runtime Java full resync already in progress";
+            response["data"]["module"] = AGENT_INFO_WM_NAME;
+            response["data"]["action"] = m_runtimeJavaRescanState["action"];
+            response["data"]["collector"] = "runtime_java";
+            response["data"]["target_module"] = m_runtimeJavaRescanState["target_module"];
+            response["data"]["target_command"] = m_runtimeJavaRescanState["target_command"];
+            response["data"]["status"] = m_runtimeJavaRescanState["status"];
+            response["data"]["result"] = m_runtimeJavaRescanState["result"];
+            response["data"]["scan_status"] = m_runtimeJavaRescanState["scan_status"];
+            response["data"]["delivery_status"] = m_runtimeJavaRescanState["delivery_status"];
+            response["data"]["request_id"] = m_runtimeJavaRescanState["request_id"];
+            response["data"]["started_at"] = m_runtimeJavaRescanState["started_at"];
+            response["data"]["finished_at"] = m_runtimeJavaRescanState["finished_at"];
+            response["data"]["last_error"] = m_runtimeJavaRescanState["last_error"];
+            return response;
+        }
+    }
+
     return runRuntimeJavaControlAction("resync_runtime_java_full",
                                        "scan_runtime_java_and_full_sync",
                                        true,
@@ -1236,6 +1266,75 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaControlAction(const std::string& act
         return response;
     }
 
+    if (isFullResync)
+    {
+        joinRuntimeJavaRescanWorker();
+
+        try
+        {
+            m_runtimeJavaRescanWorker = std::thread(
+                [this, completionCommand, partialErrorMessage]()
+                {
+                    const bool syncCompleted = pollFlushCompletion({SYSCOLLECTOR_WM_NAME}, completionCommand);
+                    const auto finishedAt = Utils::getCurrentISO8601();
+
+                    std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+
+                    if (!m_runtimeJavaRescanState.contains("action") ||
+                        m_runtimeJavaRescanState["action"] != "resync_runtime_java_full" ||
+                        !m_runtimeJavaRescanState.contains("status") ||
+                        m_runtimeJavaRescanState["status"] != "running")
+                    {
+                        return;
+                    }
+
+                    m_runtimeJavaRescanState["status"] = "completed";
+                    m_runtimeJavaRescanState["result"] = syncCompleted ? "success" : "error";
+                    m_runtimeJavaRescanState["scan_status"] = syncCompleted ? "completed" : "error";
+                    m_runtimeJavaRescanState["delivery_status"] = syncCompleted ? "success" : "error";
+                    m_runtimeJavaRescanState["finished_at"] = finishedAt;
+                    m_runtimeJavaRescanState["last_error"] = syncCompleted ? nlohmann::json(nullptr)
+                                                                           : nlohmann::json(partialErrorMessage);
+                });
+        }
+        catch (const std::exception& ex)
+        {
+            const auto finishedAt = Utils::getCurrentISO8601();
+            const auto errorMessage = "Failed to create runtime Java full resync monitor thread: " +
+                                      std::string(ex.what());
+
+            {
+                std::lock_guard<std::mutex> lock(m_runtimeJavaRescanMutex);
+                m_runtimeJavaRescanState["status"] = "completed";
+                m_runtimeJavaRescanState["result"] = "error";
+                m_runtimeJavaRescanState["scan_status"] = "error";
+                m_runtimeJavaRescanState["delivery_status"] = "error";
+                m_runtimeJavaRescanState["finished_at"] = finishedAt;
+                m_runtimeJavaRescanState["last_error"] = errorMessage;
+            }
+
+            response["error"] = MQ_ERR_INTERNAL;
+            response["message"] = errorMessage;
+            response["data"]["status"] = "completed";
+            response["data"]["result"] = "error";
+            response["data"]["scan_status"] = "error";
+            response["data"]["delivery_status"] = "error";
+            response["data"]["finished_at"] = finishedAt;
+            response["data"]["last_error"] = errorMessage;
+            return response;
+        }
+
+        response["error"] = MQ_SUCCESS;
+        response["message"] = "Runtime Java full resync requested";
+        response["data"]["status"] = "running";
+        response["data"]["result"] = "running";
+        response["data"]["scan_status"] = "running";
+        response["data"]["delivery_status"] = "pending";
+        response["data"]["finished_at"] = nullptr;
+        response["data"]["last_error"] = nullptr;
+        return response;
+    }
+
     if (waitForFlushCompletion && !pollFlushCompletion({SYSCOLLECTOR_WM_NAME}, completionCommand))
     {
         const auto finishedAt = Utils::getCurrentISO8601();
@@ -1281,6 +1380,14 @@ nlohmann::json AgentInfoImpl::runRuntimeJavaControlAction(const std::string& act
     response["data"]["delivery_status"] = "success";
     response["data"]["finished_at"] = finishedAt;
     return response;
+}
+
+void AgentInfoImpl::joinRuntimeJavaRescanWorker()
+{
+    if (m_runtimeJavaRescanWorker.joinable())
+    {
+        m_runtimeJavaRescanWorker.join();
+    }
 }
 
 namespace

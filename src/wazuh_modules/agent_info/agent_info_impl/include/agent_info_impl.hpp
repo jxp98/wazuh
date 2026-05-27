@@ -18,6 +18,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 // Type definition for module query callback function
@@ -219,6 +220,9 @@ class AgentInfoImpl
         /// @return 当前状态快照
         nlohmann::json buildRuntimeJavaRescanStatusJson() const;
 
+        /// @brief Join the background worker used for async runtime-java full resync status tracking.
+        void joinRuntimeJavaRescanWorker();
+
         /// @brief Helper to resume all paused modules
         /// @param pausedModules Set of paused module names to resume
         void resumePausedModules(const std::set<std::string>& pausedModules);
@@ -332,6 +336,9 @@ class AgentInfoImpl
 
         /// @brief 通过查询接口暴露的最近一次 runtime-java 复扫状态
         nlohmann::json m_runtimeJavaRescanState = nlohmann::json::object();
+
+        /// @brief Background worker used to avoid blocking wazuh-modulesd while full runtime-java resync is in flight.
+        std::thread m_runtimeJavaRescanWorker;
 
         /// @brief Flag set during updateChanges callback when cluster_name changed
         bool m_clusterNameChanged = false;

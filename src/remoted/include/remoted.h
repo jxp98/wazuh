@@ -116,6 +116,10 @@ int req_save(const char* counter, const char* buffer, size_t length);
 int send_msg(const char* agent_id, const char* msg, ssize_t msg_length);
 int send_msg_with_key_control(const char* agent_id, const char* msg, ssize_t msg_length, bool skip_key_lock);
 int ar_extract_sized_module_and_payload(char *raw_module_segment, char **module_name, char **payload_start);
+int ar_has_complete_sized_payload(const char* buffer_start,
+                                  const char* payload_start,
+                                  ssize_t received_len,
+                                  ssize_t payload_size);
 
 int check_keyupdate(void);
 

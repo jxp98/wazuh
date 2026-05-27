@@ -102,6 +102,55 @@ static size_t wm_syscollector_sync_header_length(const char* command, size_t com
 
 typedef enum
 {
+    WM_SYS_SYNC_TARGET_INVALID = 0,
+    WM_SYS_SYNC_TARGET_REGULAR,
+    WM_SYS_SYNC_TARGET_VD,
+    WM_SYS_SYNC_TARGET_RUNTIME_JAVA_FULL
+} wm_syscollector_sync_target_t;
+
+static wm_syscollector_sync_target_t wm_syscollector_get_sync_target(const char* command,
+                                                                     size_t command_len,
+                                                                     size_t* header_len)
+{
+    const struct
+    {
+        const char* header;
+        wm_syscollector_sync_target_t target;
+    } known_headers[] =
+    {
+        { SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER, WM_SYS_SYNC_TARGET_RUNTIME_JAVA_FULL },
+        { SYSCOLECTOR_VD_SYNC_HEADER, WM_SYS_SYNC_TARGET_VD },
+        { SYSCOLECTOR_SYNC_HEADER, WM_SYS_SYNC_TARGET_REGULAR }
+    };
+
+    size_t current_header_len = wm_syscollector_sync_header_length(command, command_len);
+
+    if (header_len)
+    {
+        *header_len = current_header_len;
+    }
+
+    if (current_header_len == 0 || current_header_len >= command_len)
+    {
+        return WM_SYS_SYNC_TARGET_INVALID;
+    }
+
+    for (size_t i = 0; i < sizeof(known_headers) / sizeof(known_headers[0]); ++i)
+    {
+        const size_t expected_header_len = strlen(known_headers[i].header);
+
+        if (current_header_len == expected_header_len &&
+            memcmp(command, known_headers[i].header, current_header_len) == 0)
+        {
+            return known_headers[i].target;
+        }
+    }
+
+    return WM_SYS_SYNC_TARGET_INVALID;
+}
+
+typedef enum
+{
     SYSCOLLECTOR_STARTUP_ACTION_WAIT = 0,
     SYSCOLLECTOR_STARTUP_ACTION_IMMEDIATE,
     SYSCOLLECTOR_STARTUP_ACTION_STOP
@@ -902,23 +951,29 @@ int wm_sync_message(const char* command, size_t command_len)
     if (enable_synchronization)
     {
         bool ret = false;
-        size_t header_len;
+        size_t header_len = 0;
         const uint8_t* data;
         size_t data_len;
+        const wm_syscollector_sync_target_t sync_target =
+            wm_syscollector_get_sync_target(command, command_len, &header_len);
 
-        header_len = wm_syscollector_sync_header_length(command, command_len);
-
-        if (header_len == 0 || header_len >= command_len)
+        if (sync_target == WM_SYS_SYNC_TARGET_INVALID)
         {
-            mtdebug1(WM_SYS_LOGTAG, "Invalid sync response header");
+            if (header_len == 0)
+            {
+                mtdebug1(WM_SYS_LOGTAG, "Invalid sync response header");
+            }
+            else
+            {
+                mtdebug1(WM_SYS_LOGTAG, "Unknown sync response header: '%.*s'", (int)header_len, command);
+            }
             return -1;
         }
 
         data = (const uint8_t*)(command + header_len);
         data_len = command_len - header_len;
 
-        if (command_len >= strlen(SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER) &&
-                memcmp(command, SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER, strlen(SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER)) == 0)
+        if (sync_target == WM_SYS_SYNC_TARGET_RUNTIME_JAVA_FULL)
         {
             if (syscollector_parse_response_runtime_java_full_vd_ptr)
             {
@@ -931,8 +986,7 @@ int wm_sync_message(const char* command, size_t command_len)
                 return -1;
             }
         }
-        else if (command_len >= strlen(SYSCOLECTOR_VD_SYNC_HEADER) &&
-                 memcmp(command, SYSCOLECTOR_VD_SYNC_HEADER, strlen("syscollector_vd")) == 0)
+        else if (sync_target == WM_SYS_SYNC_TARGET_VD)
         {
             if (syscollector_parse_response_vd_ptr)
             {

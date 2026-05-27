@@ -11,6 +11,7 @@
 
 #include "flatbuffers/flatbuffers.h"
 #include "responseDispatcher.hpp"
+#include <algorithm>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -109,4 +110,30 @@ TEST_F(ResponseDispatcherTest, SendEndMissingSeq)
             }));
 
     dispatcher.sendEndMissingSeq("001", sessionId, "test_module", ranges);
+}
+
+TEST_F(ResponseDispatcherTest, BuildWireMessageDoesNotInsertCStringTerminatorBeforePayload)
+{
+    ResponseMessage responseMsg;
+    responseMsg.agentId = "001";
+    responseMsg.moduleName = "syscollector_vd_runtime_java_full";
+
+    auto startAckOffset =
+        Wazuh::SyncSchema::CreateStartAck(responseMsg.builder, Wazuh::SyncSchema::Status_Ok, 12345);
+    auto messageOffset = Wazuh::SyncSchema::CreateMessage(
+        responseMsg.builder, Wazuh::SyncSchema::MessageType_StartAck, startAckOffset.Union());
+    responseMsg.builder.Finish(messageOffset);
+
+    std::vector<uint8_t> wireMessage;
+    buildResponseDispatcherWireMessage(responseMsg, wireMessage);
+
+    const auto expectedPrefix = std::string(RESPONSE_DISPATCHER_HEADER) + responseMsg.agentId + " " +
+                                std::to_string(responseMsg.builder.GetSize()) + " " + responseMsg.moduleName +
+                                std::string(RESPONSE_DISPATCHER_SYNC_SUFFIX);
+
+    ASSERT_EQ(wireMessage.size(), expectedPrefix.size() + responseMsg.builder.GetSize());
+    EXPECT_TRUE(std::equal(expectedPrefix.begin(), expectedPrefix.end(), wireMessage.begin()));
+    EXPECT_TRUE(std::equal(responseMsg.builder.GetBufferPointer(),
+                           responseMsg.builder.GetBufferPointer() + responseMsg.builder.GetSize(),
+                           wireMessage.begin() + expectedPrefix.size()));
 }

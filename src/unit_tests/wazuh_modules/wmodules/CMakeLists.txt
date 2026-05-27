@@ -33,6 +33,8 @@ include(${SRC_FOLDER}/unit_tests/wrappers/wazuh/shared/shared.cmake)
 # Generate wmodules tests
 list(APPEND wmodules_names "test_wmodules")
 list(APPEND wmodules_flags "-Wl,--wrap,w_query_agentd")
+list(APPEND wmodules_names "test_wm_syscollector_sync_routing")
+list(APPEND wmodules_flags " ")
 
 # Compilig tests
 list(LENGTH wmodules_names count)

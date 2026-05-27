@@ -17,6 +17,9 @@
 #include "loggerHelper.h"
 #include "socketClient.hpp"
 #include <memory>
+#include <ranges>
+#include <string_view>
+#include <vector>
 
 struct ResponseMessage
 {
@@ -44,6 +47,27 @@ struct ResponseMessage
 using ResponseQueue = Utils::AsyncValueDispatcher<ResponseMessage, std::function<void(ResponseMessage&&)>>;
 
 constexpr auto ARQUEUE_PATH {"queue/alerts/ar"};
+constexpr std::string_view RESPONSE_DISPATCHER_HEADER {"(msg_to_agent) [] N!s "};
+constexpr std::string_view RESPONSE_DISPATCHER_SYNC_SUFFIX {"_sync "};
+
+inline void buildResponseDispatcherWireMessage(const ResponseMessage& data, std::vector<uint8_t>& messageVector)
+{
+    messageVector.clear();
+    messageVector.reserve(RESPONSE_DISPATCHER_HEADER.size() + data.agentId.size() + data.moduleName.size() +
+                          RESPONSE_DISPATCHER_SYNC_SUFFIX.size() + 16 + data.builder.GetSize());
+
+    std::ranges::copy(RESPONSE_DISPATCHER_HEADER, std::back_inserter(messageVector));
+    std::ranges::copy(data.agentId, std::back_inserter(messageVector));
+    messageVector.push_back(' ');
+    std::ranges::copy(std::to_string(data.builder.GetSize()), std::back_inserter(messageVector));
+    messageVector.push_back(' ');
+    std::ranges::copy(data.moduleName, std::back_inserter(messageVector));
+    // Use string_view so we append only the visible suffix bytes and never the C-string terminator.
+    std::ranges::copy(RESPONSE_DISPATCHER_SYNC_SUFFIX, std::back_inserter(messageVector));
+    std::ranges::copy(data.builder.GetBufferPointer(),
+                      data.builder.GetBufferPointer() + data.builder.GetSize(),
+                      std::back_inserter(messageVector));
+}
 
 template<typename TQueue>
 class ResponseDispatcherImpl
@@ -80,25 +104,7 @@ public:
 
                 // Send via ARQUEUE for all agents
                 thread_local std::vector<uint8_t> messageVector;
-                constexpr auto header = "(msg_to_agent) [] N!s ";
-                constexpr auto headerLength = 22;
-                constexpr auto agentIdLength = 3;
-                constexpr auto estimatedModuleNameLength = 20;
-                constexpr auto estimatedPayloadLength = 10;
-                messageVector.clear();
-                messageVector.reserve(headerLength + agentIdLength + estimatedModuleNameLength +
-                                      estimatedPayloadLength + data.builder.GetSize());
-                messageVector.assign(header, header + headerLength);
-                std::ranges::copy(data.agentId, std::back_inserter(messageVector));
-                messageVector.push_back(' ');
-                // Send the payload size
-                std::ranges::copy(std::to_string(data.builder.GetSize()), std::back_inserter(messageVector));
-                messageVector.push_back(' ');
-                std::ranges::copy(data.moduleName, std::back_inserter(messageVector));
-                std::ranges::copy("_sync ", std::back_inserter(messageVector));
-                std::ranges::copy(data.builder.GetBufferPointer(),
-                                  data.builder.GetBufferPointer() + data.builder.GetSize(),
-                                  std::back_inserter(messageVector));
+                buildResponseDispatcherWireMessage(data, messageVector);
 
                 responseSocketClient->send(reinterpret_cast<const char*>(messageVector.data()), messageVector.size());
             });

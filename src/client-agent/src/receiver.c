@@ -94,6 +94,7 @@ int receive_msg()
         /* Check for commands */
         if (IsValidHeader(tmp_msg)) {
             undefined_msg_logged = 0;
+            msg_length -= strlen(CONTROL_HEADER);
 
             available_server = (int)time(NULL);
             w_agentd_state_update(UPDATE_ACK, (void *) &available_server);
@@ -140,6 +141,10 @@ int receive_msg()
             /* Syscollector */
             else if (strncmp(tmp_msg, HC_SYSCOLLECTOR, strlen(HC_SYSCOLLECTOR)) == 0
                      || strncmp(tmp_msg, SYSCOLECTOR_SYNC_HEADER, strlen(SYSCOLECTOR_SYNC_HEADER)) == 0
+                     || strncmp(tmp_msg, SYSCOLECTOR_VD_SYNC_HEADER, strlen(SYSCOLECTOR_VD_SYNC_HEADER)) == 0
+                     || strncmp(tmp_msg,
+                                SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER,
+                                strlen(SYSCOLECTOR_VD_RUNTIME_JAVA_FULL_SYNC_HEADER)) == 0
                      || strncmp(tmp_msg, SCA_SYNC_HEADER, strlen(SCA_SYNC_HEADER)) == 0
                      || strncmp(tmp_msg, AGENT_INFO_SYNC_HEADER, strlen(AGENT_INFO_SYNC_HEADER)) == 0) {
                 wmcom_send(tmp_msg, msg_length);
@@ -153,7 +158,7 @@ int receive_msg()
 
             // Request from manager (or request ack)
             else if (IS_REQ(tmp_msg)) {
-                req_push(tmp_msg + strlen(HC_REQUEST), msg_length - strlen(HC_REQUEST) - 3);
+                req_push(tmp_msg + strlen(HC_REQUEST), msg_length - strlen(HC_REQUEST));
                 continue;
             }
 

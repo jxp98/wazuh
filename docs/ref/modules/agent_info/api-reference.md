@@ -85,6 +85,7 @@ size_t agent_info_query(const char* json_query, char** output);
 **说明：**
 这是 agent 侧协调控制面的本地入口。当前与 runtime-java 相关的命令包括：
 - `rescan_runtime_java`
+- `resync_runtime_java_full`
 - `get_runtime_java_rescan_status`
 
 `rescan_runtime_java` 会区分两段状态：
@@ -95,6 +96,11 @@ size_t agent_info_query(const char* json_query, char** output);
 - `result = success`：本地复扫完成，且立即送达成功
 - `result = partial_success`：本地复扫完成，但立即送达失败，后续会由常规同步重试
 - `result = error`：复扫命令本身未能成功执行
+
+`resync_runtime_java_full` 触发的是一次异步的全量回灌同步：
+- 查询接口本身只负责向 `syscollector` 下发请求并立即返回 `running`
+- 真正的完成结果需要通过 `get_runtime_java_rescan_status` 轮询
+- `delivery_status = pending` 表示 full-sync 已被受理，但仍在后台等待 manager 侧握手和完成回执
 
 ---
 

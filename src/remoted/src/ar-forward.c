@@ -36,6 +36,29 @@ int ar_extract_sized_module_and_payload(char *raw_module_segment, char **module_
     return 0;
 }
 
+int ar_has_complete_sized_payload(const char* buffer_start,
+                                  const char* payload_start,
+                                  ssize_t received_len,
+                                  ssize_t payload_size)
+{
+    size_t payload_offset = 0;
+    ssize_t available_payload_len = 0;
+
+    if (!buffer_start || !payload_start || payload_start < buffer_start || received_len < 0 || payload_size < 0)
+    {
+        return 0;
+    }
+
+    payload_offset = (size_t)(payload_start - buffer_start);
+    if ((size_t)received_len < payload_offset)
+    {
+        return 0;
+    }
+
+    available_payload_len = received_len - (ssize_t)payload_offset;
+    return available_payload_len >= payload_size;
+}
+
 /* Start of a new thread. Only returns on unrecoverable errors. */
 void *AR_Forward(__attribute__((unused)) void *arg)
 {
@@ -43,15 +66,16 @@ void *AR_Forward(__attribute__((unused)) void *arg)
     int ar_location = 0;
     const char * path = ARQUEUE;
     char *msg_to_send;
-    os_calloc(OS_MAXSTR, sizeof(char), msg_to_send);
+    os_calloc(OS_MAXSTR + 1, sizeof(char), msg_to_send);
     char *msg;
-    os_calloc(OS_MAXSTR, sizeof(char), msg);
+    os_calloc(OS_MAXSTR + 2, sizeof(char), msg);
     char *ar_agent_id = NULL;
     char *tmp_str = NULL;
     char *payload_size_offset = NULL;
     ssize_t payload_size = 0;
     ssize_t header_size = 0;
     char *module_name = NULL;
+    ssize_t received_length = 0;
 
     /* Create the unix queue */
     if ((arq = StartMQ(path, READ, 0)) < 0) {
@@ -60,9 +84,15 @@ void *AR_Forward(__attribute__((unused)) void *arg)
 
     /* Daemon loop */
     while (1) {
-        if (OS_RecvUnix(arq, OS_MAXSTR - 1, msg)) {
+        // OS_RecvUnix() internally reserves one byte for recvfrom() and writes a trailing NUL at ret[sizet],
+        // so receive buffers for binary ARQUEUE payloads must be provisioned with two extra bytes.
+        if ((received_length = OS_RecvUnix(arq, OS_MAXSTR + 1, msg)) > 0) {
 
             mdebug2("Active response request received: %s", msg);
+            payload_size = 0;
+            header_size = 0;
+            module_name = NULL;
+            payload_size_offset = NULL;
 
             /* Always zero the location */
             ar_location = 0;
@@ -149,6 +179,14 @@ void *AR_Forward(__attribute__((unused)) void *arg)
                 /* Extract the module name */
                 if (ar_extract_sized_module_and_payload(tmp_str, &module_name, &tmp_str) < 0) {
                     mwarn(EXECD_INV_MSG, msg);
+                    continue;
+                }
+
+                if (!ar_has_complete_sized_payload(msg, tmp_str, received_length, payload_size)) {
+                    mwarn("Truncated sized payload for agent '%s' module '%s': declared %ld bytes but datagram is incomplete. Dropping message.",
+                          ar_agent_id,
+                          module_name ? module_name : "",
+                          payload_size);
                     continue;
                 }
 
