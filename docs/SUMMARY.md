@@ -9,6 +9,7 @@
 - [Run from Sources](dev/run-sources.md)
 - [Package generation](dev/package-generation.md)
 - [Test execution](dev/test-execution.md)
+- [Runtime Java current state and history](dev/runtime-java-current-state-and-history.md)
 
 # Reference Manual
 
