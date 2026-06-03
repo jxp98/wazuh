@@ -922,9 +922,21 @@ public:
             logDebug2(IC_NAME, "Index template response: %s", response.c_str());
         };
 
-        const auto onError = [](const std::string& error, const long statusCode, const std::string&)
+        const auto onError = [](const std::string& error, const long statusCode, const std::string& response)
         {
-            logError(IC_NAME, "Index template update failed: %s, status code: %ld", error.c_str(), statusCode);
+            if (!response.empty())
+            {
+                logError(IC_NAME,
+                         "Index template update failed: %s, status code: %ld, response: %s",
+                         error.c_str(),
+                         statusCode,
+                         response.c_str());
+            }
+            else
+            {
+                logError(IC_NAME, "Index template update failed: %s, status code: %ld", error.c_str(), statusCode);
+            }
+
             throw IndexerConnectorException("Index template update failed: " + error);
         };
 

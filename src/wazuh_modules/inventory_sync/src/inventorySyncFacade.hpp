@@ -23,6 +23,7 @@
 #include "socketServer.hpp"
 #include "stringHelper.h"
 #include "componentVulnerabilityScannerFacade.hpp"
+#include "runtimeJavaMatcherProtocol.hpp"
 #include "vulnerabilityScannerFacade.hpp"
 #include <asyncValueDispatcher.hpp>
 #include <filesystem>
@@ -1097,14 +1098,18 @@ public:
                             }
                         }
 
-                        if (res.context->option == Wazuh::SyncSchema::Option_VDFirst ||
-                            res.context->option == Wazuh::SyncSchema::Option_VDSync)
+                        const auto isVdSession = res.context->option == Wazuh::SyncSchema::Option_VDFirst ||
+                                                 res.context->option == Wazuh::SyncSchema::Option_VDSync;
+                        const auto runtimeJavaMatcherEnabled =
+                            ComponentVulnerabilityScannerFacade::instance().isEnabled();
+                        const auto shouldRunRuntimeJavaScanner =
+                            runtimeJavaMatcherEnabled && RuntimeJavaMatcherProtocol::hasRuntimeJavaInventory(*res.context);
+
+                        if (isVdSession || shouldRunRuntimeJavaScanner)
                         {
-                            const auto runtimeJavaMatcherEnabled =
-                                ComponentVulnerabilityScannerFacade::instance().isEnabled();
                             bool shouldRunInventoryScanner = false;
 
-                            if (VulnerabilityScannerFacade::instance().isInitialized())
+                            if (isVdSession && VulnerabilityScannerFacade::instance().isInitialized())
                             {
                                 // If the CVE feed initial load is still in progress, block this
                                 // session thread until it completes (or the scanner is stopped).
@@ -1131,7 +1136,7 @@ public:
                                               res.context->agentId.c_str());
                                 }
                             }
-                            else if (!runtimeJavaMatcherEnabled)
+                            else if (isVdSession && !runtimeJavaMatcherEnabled)
                             {
                                 logDebug1(LOGGER_DEFAULT_TAG,
                                           "InventorySyncFacade: Vulnerability scanner disabled — "
@@ -1139,14 +1144,14 @@ public:
                                           res.context->agentId.c_str());
                             }
 
-                            if (shouldRunInventoryScanner || runtimeJavaMatcherEnabled)
+                            if (shouldRunInventoryScanner || shouldRunRuntimeJavaScanner)
                             {
                                 logDebug2(LOGGER_DEFAULT_TAG,
                                           "InventorySyncFacade: Running vulnerability scanners for agent %s...",
                                           res.context->agentId.c_str());
                                 try
                                 {
-                                    if (runtimeJavaMatcherEnabled)
+                                    if (shouldRunRuntimeJavaScanner)
                                     {
                                         ComponentVulnerabilityScannerFacade::instance().runScanner(*m_dataStore,
                                                                                                    *res.context);
